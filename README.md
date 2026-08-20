@@ -1,28 +1,24 @@
 # KilimoSTACK / OpenAgriNet — KALRO Advisory Content & AI Backend
 
 Reference backend implementation establishing **KALRO** as the certified
-agricultural content **and** AI provider on the KilimoSTACK / OpenAgriNet
+agricultural content **and** AI provider on the KilimoSTACK/OpenAgriNet
 (OAN) network, per the Beckn-based architecture:
 
 ```
 Provider Platform <-> Middleware <-> Beckn Adaptor-Provider <-> beckn <-> Beckn Adaptor-Seeker <-> Middleware <-> AI Layer <-> client
                                               ^                                    ^
-                                              |                beckn               |
+                                              |                  Beckn protocol    |
                                               +----------------- Gateway ----------+
                                               |                                    |
                                               +------------- Beckn Registry -------+
 ```
 
-This project builds the two boxes on the **left and right ends** of that
-diagram that are specific to KALRO, not the generic Beckn network
-infrastructure (Adaptors, Gateway, Registry) in the middle — those are
-standard KilimoSTACK/OAN network components this project integrates with,
-not reimplements.
+This project builds the two boxes on the **left and right ends** of that diagram that are specific to KALRO, not the generic Beckn network infrastructure (Adaptors, Gateway, Registry) in the middle — those are standard KilimoSTACK/OAN network components this project integrates with, not reimplements.
 
 | Diagram box | This project | Tech |
 |---|---|---|
-| **Provider Platform** | `django_backend/` | Django + Django REST Framework + Postgres |
-| **AI Layer** | `ai_layer/` | FastAPI + Ollama (self-hosted LLM) + Chroma (vector DB) |
+| **Provider Platform** | `kilimo_daftari/` | Django + Django REST Framework + Postgres |
+| **AI Layer** | `kalro_knowledge_brain/` | FastAPI + Ollama (self-hosted LLM) + Chroma (vector DB) |
 | *(client)* | `frontend/` | React + Vite — screens/certifies content and queries the AI Layer |
 
 ## Multi-provider, multi-service network (`providers/`)
@@ -110,14 +106,14 @@ the way a real browser does.
 
 ## Why two services
 
-- **Django (`django_backend/`)** is KALRO's system of record: it stores the
+- **Django (`kilimo_daftari/`)** is KALRO's system of record: it stores the
   full advisory content corpus, runs the human **Screen & Classify**
   workflow (scientific accuracy & currency checks, sorting by crop / topic /
   content type — the same workflow originally run in the Screen & Classify
   Excel template), and exposes a certified-content catalog API that a real
   Beckn Adaptor-Provider's client-facing module would call to make KALRO
   discoverable on the network.
-- **FastAPI (`ai_layer/`)** is the RAG + LLM engine: it receives certified
+- **FastAPI (`kalro_knowledge_brain/`)** is the RAG + LLM engine: it receives certified
   content from Django, chunks and embeds it (via Ollama) into a vector
   database, and answers farmer/extension-officer queries by retrieving
   grounded context and generating an answer with a self-hosted Ollama model
@@ -136,12 +132,12 @@ ready_to_certify`.
 ```bash
 docker compose up -d postgres ollama
 docker compose run --rm model-puller        # pulls llama3.1 + nomic-embed-text into the shared Ollama volume
-docker compose up -d django_backend ai_layer frontend
+docker compose up -d kilimo_daftari kalro_knowledge_brain frontend
 
 # Django: create an admin user + auth token, then import the sample resource
-docker compose exec django_backend python manage.py createsuperuser
-docker compose exec django_backend python manage.py drf_create_token <username>
-docker compose exec django_backend python manage.py import_advisory_json /data/sample_camel_calf_resource.json
+docker compose exec kilimo_daftari python manage.py createsuperuser
+docker compose exec kilimo_daftari python manage.py drf_create_token <username>
+docker compose exec kilimo_daftari python manage.py import_advisory_json /data/sample_camel_calf_resource.json
 ```
 
 Open the frontend at **http://localhost:5173** — paste the token from
@@ -170,7 +166,7 @@ Frontend: http://localhost:5173
 ### Onboarding a second provider (e.g. a tractor-hire FPO)
 
 ```bash
-docker compose exec django_backend python manage.py shell -c "
+docker compose exec kilimo_daftari python manage.py shell -c "
 from providers.models import Provider, ServiceCategory, ProviderMembership
 from django.contrib.auth.models import User
 from rest_framework.authtoken.models import Token
@@ -203,7 +199,7 @@ curl http://localhost:8000/beckn/network/mavuno.fpo/catalog/
 
 ```bash
 # Django backend
-cd django_backend
+cd kilimo_daftari
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate
@@ -213,7 +209,7 @@ python manage.py runserver 0.0.0.0:8000
 
 # AI Layer (separate terminal; requires Ollama running locally: `ollama serve`,
 # then `ollama pull llama3.1` and `ollama pull nomic-embed-text`)
-cd ai_layer
+cd kalro_knowledge_brain
 python -m venv venv && source venv/bin/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload --port 8001
@@ -223,8 +219,8 @@ Both services also run their test suites without a live Ollama server (the
 AI Layer's tests mock the Ollama client):
 
 ```bash
-cd django_backend && python manage.py test advisory
-cd ai_layer && pytest tests/
+cd kilimo_daftari && python manage.py test advisory
+cd kalro_knowledge_brain && pytest tests/
 ```
 
 ### Frontend (without Docker)
@@ -244,7 +240,7 @@ system, and how to obtain an auth token for the screening workflow.
 
 ## Data model: JSON spec + Screen & Classify, in one table
 
-`django_backend/advisory/models.py`'s `AdvisoryResource` table is built from
+`kilimo_daftari/advisory/models.py`'s `AdvisoryResource` table is built from
 **two** sources, combined:
 
 1. **Advisory Content Import JSON Specification v0.1** (`JSON_Data_Specification.docx`)
@@ -266,7 +262,7 @@ system, and how to obtain an auth token for the screening workflow.
 Only resources with `quality_flag = ready_to_certify` are ever synced to
 the AI Layer's vector index or exposed via the `beckn_provider` catalog —
 the screening gate is enforced in both `advisory/services.py` (Django side)
-and `ai_layer/app/ingestion.py` (AI Layer side, defensively).
+and `kalro_knowledge_brain/app/ingestion.py` (AI Layer side, defensively).
 
 ### Field mapping (JSON spec → Django model)
 
@@ -292,7 +288,7 @@ and `ai_layer/app/ingestion.py` (AI Layer side, defensively).
 
 ## API surface
 
-### Django backend (`django_backend/`)
+### Django backend (`kilimo_daftari/`)
 
 | Endpoint | Purpose |
 |---|---|
@@ -306,7 +302,7 @@ and `ai_layer/app/ingestion.py` (AI Layer side, defensively).
 | `GET /beckn/catalog/` | Certified-content catalog (what a Beckn Adaptor-Provider would read) |
 | `GET /beckn/catalog/{publication_id}/` | Full certified resource record |
 
-### AI Layer (`ai_layer/`)
+### AI Layer (`kalro_knowledge_brain/`)
 
 | Endpoint | Purpose |
 |---|---|
@@ -327,7 +323,7 @@ which chunks, embeds, and stores. Three ways to trigger it:
 `PATCH /api/v1/resources/{id}/screen/` with `{"quality_flag": "ready_to_certify"}`
 (or the equivalent "Save screening decision" button in the frontend, or the
 "Mark selected as Ready to Certify" admin action) fires
-`advisory/services.py::sync_resource_to_ai_layer()` automatically.
+`advisory/services.py::sync_resource_to_kalro_knowledge_brain()` automatically.
 
 **2. Backfilling everything already certified**
 ```bash
@@ -336,14 +332,14 @@ curl -X POST http://localhost:8000/api/v1/resources/sync-ready/ \
   -H "Authorization: Token <your-token>"
 
 # Or via the management command (scriptable, no HTTP auth needed locally):
-python manage.py sync_to_ai_layer
+python manage.py sync_to_kalro_knowledge_brain
 
 # Re-embed everything, even already-synced resources (e.g. after changing
 # chunking logic or rebuilding the Chroma volume):
-python manage.py sync_to_ai_layer --resync-all
+python manage.py sync_to_kalro_knowledge_brain --resync-all
 
 # Just one resource:
-python manage.py sync_to_ai_layer --publication-id kalro-livestock-camel-calf-management-2017-043
+python manage.py sync_to_kalro_knowledge_brain --publication-id kalro-livestock-camel-calf-management-2017-043
 ```
 Both only ever touch resources with `quality_flag = ready_to_certify` — the
 same guard as the automatic path — and `vector_sync_status` on each
@@ -367,7 +363,7 @@ wired into the vector index yet. See "Production hardening notes" below.
 
 ---
 
-## RAG pipeline (`ai_layer/app/`)
+## RAG pipeline (`kalro_knowledge_brain/app/`)
 
 1. **Chunking** (`ingestion.py`) — one chunk per `content[]` section
    (sections in KALRO exports are already coherent, paragraph-length units);
@@ -415,7 +411,7 @@ This is a runnable **reference** implementation. Before real deployment:
   listings (market prices, equipment rental, etc.) are not indexed into the
   RAG vector store — they're discoverable via `/beckn/network/...` but the
   chat assistant can't yet answer "where can I rent a tractor near me" by
-  retrieving them. Extending `ai_layer/app/ingestion.py` to also accept
+  retrieving them. Extending `kalro_knowledge_brain/app/ingestion.py` to also accept
   `CatalogItem`-shaped payloads (structured, not chunked prose) is a
   natural next step if that's wanted.
 
@@ -428,7 +424,7 @@ This is a runnable **reference** implementation. Before real deployment:
   Postgres instance the Django backend already uses, so the corpus and its
   embeddings share one backup/DR story — `vector_store.py`'s
   `upsert_chunks` / `query` interface is narrow enough to swap.
-- **Auth**: `AI_LAYER_INGEST_API_KEY` is a bare shared secret; swap for
+- **Auth**: `kalro_knowledge_brain_INGEST_API_KEY` is a bare shared secret; swap for
   mTLS or a signed-request scheme when integrating with a real Beckn
   Adaptor.
 - **Beckn protocol**: `beckn_provider/` exposes plain REST endpoints for a
@@ -453,7 +449,7 @@ kilimostack-kalro-backend/
 ├── docker-compose.yml
 ├── data/
 │   └── sample_camel_calf_resource.json      # real KALRO example, used by both test suites
-├── django_backend/                          # "Provider Platform"
+├── kilimo_daftari/                          # "Provider Platform"
 │   ├── config/                              # settings, urls, wsgi/asgi
 │   ├── advisory/                            # models, serializers, views, admin, services, tests
 │   │   └── management/commands/import_advisory_json.py
@@ -462,7 +458,7 @@ kilimostack-kalro-backend/
 │   ├── accounts/                            # register/login/me/logout (DRF token auth)
 │   ├── beckn_provider/                      # certified-content catalog + multi-provider network catalog
 │   └── manage.py
-├── ai_layer/                                # "AI Layer" (FastAPI + Ollama + Chroma)
+├── kalro_knowledge_brain/                                # "AI Layer" (FastAPI + Ollama + Chroma)
 │   ├── app/
 │   │   ├── main.py, config.py, schemas.py
 │   │   ├── ollama_client.py, vector_store.py
