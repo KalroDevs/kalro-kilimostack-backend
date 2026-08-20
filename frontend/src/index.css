@@ -1,0 +1,70 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-canvas text-ink;
+  }
+  body {
+    @apply font-sans antialiased;
+    background-image: radial-gradient(circle at 1px 1px, rgba(22, 33, 27, 0.045) 1px, transparent 0);
+    background-size: 22px 22px;
+  }
+  h1, h2, h3, h4 {
+    @apply font-display text-ink;
+  }
+  ::selection {
+    background: #C08829;
+    color: #F6F5EF;
+  }
+  :focus-visible {
+    outline: 2px solid #23492E;
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  /* Signature element: a certification "stamp" used for quality_flag and
+     risk_level throughout the app -- a nod to the physical ink stamps used
+     on herbarium specimen sheets and scientific accession records, tying
+     directly to KALRO's role certifying content before it reaches farmers. */
+  .stamp {
+    @apply inline-flex items-center gap-1.5 rounded-[3px] border px-2 py-0.5
+           font-mono text-[11px] font-semibold uppercase tracking-wider;
+    transform: rotate(-1deg);
+  }
+
+  .field-label {
+    @apply font-mono text-[10.5px] font-medium uppercase tracking-[0.14em] text-ink/50;
+  }
+
+  .card {
+    @apply rounded-md border border-wire bg-paper shadow-card;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-[3px] px-3.5 py-2
+           font-sans text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-herbarium text-paper hover:bg-herbarium-light active:bg-herbarium-dark;
+  }
+  .btn-secondary {
+    @apply btn border border-wire bg-paper text-ink hover:bg-canvas2;
+  }
+  .btn-ghost {
+    @apply btn text-ink/70 hover:bg-canvas2 hover:text-ink;
+  }
+
+  .input {
+    @apply w-full rounded-[3px] border border-wire bg-paper px-3 py-2 text-sm text-ink
+           placeholder:text-ink/35 focus:border-herbarium focus:outline-none;
+  }
+  .select {
+    @apply input appearance-none bg-no-repeat pr-8;
+  }
+  .textarea {
+    @apply input resize-y;
+  }
+}

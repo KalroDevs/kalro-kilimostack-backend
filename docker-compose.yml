@@ -1,0 +1,113 @@
+version: "3.9"
+
+services:
+  # -------------------------------------------------------------------
+  # Postgres: system of record for the Django "Provider Platform"
+  # -------------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: kilimostack
+      POSTGRES_USER: kilimostack
+      POSTGRES_PASSWORD: kilimostack
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kilimostack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # -------------------------------------------------------------------
+  # Ollama: self-hosted LLM runtime backing the AI Layer's embeddings
+  # and chat generation.
+  # -------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    # GPU users: uncomment the "deploy" block below (requires nvidia-container-toolkit)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # One-shot job: pulls the chat + embedding models into the shared Ollama
+  # volume, then exits. Re-run with `docker compose run --rm model-puller`
+  # any time you want to pull a different model.
+  model-puller:
+    image: ollama/ollama:latest
+    depends_on:
+      - ollama
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "sleep 3 &&
+       OLLAMA_HOST=ollama:11434 ollama pull llama3.1 &&
+       OLLAMA_HOST=ollama:11434 ollama pull nomic-embed-text &&
+       echo 'Models pulled.'"
+
+  # -------------------------------------------------------------------
+  # Django: KALRO content corpus, screening workflow, provider-platform
+  # side of the Beckn integration.
+  # -------------------------------------------------------------------
+  django_backend:
+    build: ./django_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DJANGO_SECRET_KEY: change-me-in-production
+      DJANGO_DEBUG: "true"
+      DJANGO_ALLOWED_HOSTS: "*"
+      DATABASE_URL: postgres://kilimostack:kilimostack@postgres:5432/kilimostack
+      AI_LAYER_BASE_URL: http://ai_layer:8001
+      AI_LAYER_SYNC_ENABLED: "true"
+      PROVIDER_INSTITUTION_NAME: "Kenya Agricultural and Livestock Research Organization"
+      PROVIDER_ID: "kalro.kilimostack"
+      DJANGO_CORS_ALLOWED_ORIGINS: "http://localhost:5173"
+    volumes:
+      - ./django_backend:/app
+      - ./data:/data
+    ports:
+      - "8000:8000"
+
+  # -------------------------------------------------------------------
+  # FastAPI + Ollama: the "AI Layer" -- RAG ingestion + chat endpoints.
+  # -------------------------------------------------------------------
+  ai_layer:
+    build: ./ai_layer
+    depends_on:
+      - ollama
+    environment:
+      AI_LAYER_OLLAMA_BASE_URL: http://ollama:11434
+      AI_LAYER_OLLAMA_CHAT_MODEL: llama3.1
+      AI_LAYER_OLLAMA_EMBED_MODEL: nomic-embed-text
+      AI_LAYER_CHROMA_PERSIST_DIR: /app/chroma_data
+    volumes:
+      - ./ai_layer:/app
+      - chroma_data:/app/chroma_data
+    ports:
+      - "8001:8001"
+
+  # -------------------------------------------------------------------
+  # Frontend: React + Vite client (built and served by nginx)
+  # -------------------------------------------------------------------
+  frontend:
+    build: ./frontend
+    depends_on:
+      - django_backend
+      - ai_layer
+    ports:
+      - "5173:80"
+
+volumes:
+  postgres_data:
+  ollama_data:
+  chroma_data:

@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Django
+django_backend/db.sqlite3
+django_backend/staticfiles/
+
+# AI Layer
+ai_layer/chroma_data/
+
+# Env files
+.env
+*/.env
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/

@@ -1,0 +1,9 @@
+Django
+djangorestframework
+django-filter
+django-cors-headers
+dj-database-url
+psycopg2-binary
+httpx
+python-dotenv
+gunicorn

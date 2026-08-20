@@ -1,0 +1,281 @@
+[{
+    "title": "Improved Camel Calf Management Before and After Birth",
+    "link": "https://knowledgebank.kalro.org/livestock",
+    "publication_id": "kalro-livestock-camel-calf-management-2017-043",
+    "thumbnail": "",
+    "institution": "Kenya Agricultural and Livestock Research Organization",
+    "author": [
+      "S. G. Kuria",
+      "I. Tura",
+      "F. Aloo"
+    ],
+    "publish_date": "2018/01/08",
+    "modified_date": "",
+    "content_type": "PDF brochure",
+    "language": "en",
+    "available_languages": [
+      "en"
+    ],
+	"sector": "livestock",
+    "value_chain": "camel",
+    "commodity": [
+      "camel",
+      "camel calf",
+      "camel milk"
+    ],
+    "production_system": [
+      "pastoral",
+      "agro-pastoral",
+      "smallholder livestock"
+    ],
+    "advisory_domain": [
+      "calf management",
+      "calving management",
+      "milk feeding",
+      "weaning",
+      "animal health",
+      "tick control",
+      "diarrhoea management",
+      "dam management",
+      "forage and water provision"
+    ],
+    "target_users": [
+      "pastoral households",
+      "camel keepers",
+      "extension officers",
+      "livestock officers",
+      "community animal health workers"
+    ],
+    "geographic_applicability": {
+      "country": "Kenya",
+      "counties": [],
+      "agro_ecological_zones": [
+        "arid and semi-arid lands"
+      ],
+      "notes": "Source centre is KALRO Marsabit. Applicability should be confirmed for specific camel-producing counties and pastoral production systems."
+    },
+    "seasonality": {
+      "season": [],
+      "production_stage": [
+        "one month before calving",
+        "birth",
+        "first six hours after birth",
+        "first two months",
+        "one month of age",
+        "five to six months",
+        "one year and above"
+      ],
+      "timing_notes": "Management guidance covers the period before birth, immediately after calving, early calf feeding, disease/parasite control, and weaning."
+    },
+    "validation_status": "source_validated",
+    "validated_by": [
+      "KALRO"
+    ],
+    "review_date": "",
+    "next_review_date": "",    
+    "preferred_citation": "Kuria, S. G., Tura, I., & Aloo, F. (2017). Improved camel calf management before and after birth. KALRO Information Brochure Series 2017/043. Kenya Agricultural and Livestock Research Organization.",
+    "content": [
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-001",
+        "reading_order": 1,
+        "content_header": "Introduction",
+        "content_text": "Camel calves are important because they are the future herd. Without calves, the herd cannot grow and milk will not be available. Under traditional pastoral production systems, research has reported calf mortality rates of up to 60%, mainly attributed to diseases such as diarrhoea, tick paralysis, and competition for milk with humans. Several strategies can increase camel calf survival rate and herd size, providing milk to the family and income through sale of live camels.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Mortality rate and disease claims should retain source attribution and should be reviewed before reuse in public statistics or dashboards."
+        ],
+        "content_tags": [
+          "camel calves",
+          "calf survival",
+          "pastoral systems",
+          "milk",
+          "household income"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-002",
+        "reading_order": 2,
+        "content_header": "Hints for ensuring a healthy calf",
+        "content_text": "Use healthy parents with known history. Avoid parents from inbred lines. Select a mother that has not calved more than five times. Use a bull that is not older than twelve years.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Breeding recommendations should be adapted to herd records and local livestock officer guidance."
+        ],
+        "content_tags": [
+          "breeding",
+          "parent selection",
+          "inbreeding",
+          "dam",
+          "bull"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-003",
+        "reading_order": 3,
+        "content_header": "Management of the mother one month before calving",
+        "content_text": "Provide adequate quality forage and water, manage diseases, avoid long-distance walking, and ensure calving occurs near the boma. Graze the mother in areas free of potholes, gullies, hills, and stagnant water. Keep close watch of the mother to avoid predation and straying.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Disease management should be handled with support from qualified animal health personnel."
+        ],
+        "content_tags": [
+          "dam management",
+          "pre-calving",
+          "forage",
+          "water",
+          "predation",
+          "boma"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-004",
+        "reading_order": 4,
+        "content_header": "How to manage calving",
+        "content_text": "Ensure the calf is expelled when the mother is lying down and check whether the calf is breathing normally. If there are breathing problems, trigger breathing by pouring cold water over the chest and massaging the nostrils from the eye to remove mucus. Strip the umbilical cord of contents and tie it loosely. Place the calf in front of the mother to facilitate acceptance. Assist the calf to suckle within the first six hours to acquire passive immunity and pass the first faeces. In case of calf rejection, smear the dam with birth fluids around the nostril or isolate from the herd.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Difficult births, abnormal breathing, infection risk, persistent rejection, or weak calves should be escalated to a qualified animal health worker or livestock officer."
+        ],
+        "content_tags": [
+          "calving",
+          "birth",
+          "breathing",
+          "umbilical cord",
+          "colostrum",
+          "passive immunity",
+          "calf rejection"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-005",
+        "reading_order": 5,
+        "content_header": "Milk feeding to the calf",
+        "content_text": "Control competition for milk with humans by allowing the calf to suckle two teats for the first two months of growth. Provide extra milk from other camels if the mother is a low yielder. Foster the calf to another mother in case of rejection or death of the mother. Control mastitis for good udder health. The source text includes a fragmented reference to five to six months, which should be confirmed against the original brochure before use.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Mastitis control and calf fostering should be guided by livestock officers where infection, rejection, or calf weakness is observed.",
+          "The fragmented five-to-six-month statement requires source verification before downstream advisory use."
+        ],
+        "content_tags": [
+          "milk feeding",
+          "suckling",
+          "low milk yield",
+          "fostering",
+          "mastitis"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-006",
+        "reading_order": 6,
+        "content_header": "Water and feed provision to the calf",
+        "content_text": "Introduce the calf to forage as early as one month of age by allowing it to accompany the mother during the day. Ensure access to quality forage. Do not walk the calf far.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Forage guidance should be adapted to seasonal availability and calf condition."
+        ],
+        "content_tags": [
+          "forage",
+          "water",
+          "early feeding",
+          "calf movement",
+          "grazing"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-007",
+        "reading_order": 7,
+        "content_header": "Manage critical diseases and parasites",
+        "content_text": "Control tick paralysis through regular washing with acaricides depending on the tick load, shaving, and hand removal. Treat diarrhoea using sulphur-based drugs, for example S-Dime tablets. Stop diarrhoea by giving charcoal solution or chicken eggs. Replenish water lost through diarrhoea by giving a solution of honey and salt.",
+        "page_start": 2,
+        "page_end": 2,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Acaricide use, drug use, suspected tick paralysis, severe diarrhoea, dehydration, or weak calves should be escalated to qualified animal health personnel.",
+          "Drug names, dosage, withdrawal periods, and regulatory status require expert review before farmer-facing AI use."
+        ],
+        "content_tags": [
+          "tick paralysis",
+          "acaricides",
+          "diarrhoea",
+          "dehydration",
+          "parasites",
+          "veterinary escalation"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-008",
+        "reading_order": 8,
+        "content_header": "Recommended calf weaning procedure",
+        "content_text": "Wean at one year of age and above. Wean gradually. Provide more water to the calf after weaning. At weaning, deworm the calf and wash with acaricides to remove external parasites. Treat the calf with a recommended prophylactic against trypanosomiasis. Graze the weaner on quality forage and provide minerals. Monitor growth progress for three months.",
+        "page_start": 1,
+        "page_end": 1,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [
+          "Deworming, acaricide use, and trypanosomiasis prophylaxis require qualified animal health guidance, including correct product, dosage, timing, and withdrawal guidance where applicable."
+        ],
+        "content_tags": [
+          "weaning",
+          "deworming",
+          "acaricides",
+          "trypanosomiasis",
+          "forage",
+          "minerals",
+          "growth monitoring"
+        ]
+      },
+      {
+        "content_id": "kalro-camel-calf-2017-043-sec-009",
+        "reading_order": 9,
+        "content_header": "Benefits of improved camel calf management",
+        "content_text": "Improved camel calf management guarantees a living and healthy calf at birth, reduces risks to the mother, enhances calf survival and growth, provides more milk for the family and where possible for sale, and improves household food security.",
+        "page_start": 1,
+        "page_end": 1,
+        "content_images": [],
+        "content_tables": [],
+        "content_warnings": [],
+        "content_tags": [
+          "benefits",
+          "calf survival",
+          "milk",
+          "food security",
+          "household income"
+        ]
+      }
+    ],
+    "advisory_safety": {
+      "risk_level": "high",
+      "risk_domains": [
+        "veterinary treatment",
+        "acaricide use",
+        "drug use",
+        "trypanosomiasis prophylaxis",
+        "diarrhoea",
+        "tick paralysis",
+        "mastitis",
+        "calving complications"
+      ],
+      "requires_human_review": true,
+      "escalation_guidance": "Escalate cases involving abnormal birth, non-breathing calves, persistent calf rejection, suspected tick paralysis, severe diarrhoea, dehydration, animal mortality, mastitis, drug dosage, acaricide use, deworming, or trypanosomiasis prophylaxis to a qualified veterinarian, livestock officer, community animal health worker, or KALRO expert.",
+      "disclaimer": "This resource provides general advisory guidance from a KALRO brochure. Farmer-facing recommendations should be localized and technically reviewed before AI delivery."
+    }
+}]
