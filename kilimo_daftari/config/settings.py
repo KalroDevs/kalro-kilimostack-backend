@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "beckn_provider",
     "providers",
     "accounts",
+    "documents",
 ]
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
@@ -94,19 +95,26 @@ ASGI_APPLICATION = "config.asgi.application"
 #     )
 # }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': os.environ.get('DB_NAME', 'mydb'),
+#         'USER': os.environ.get('DB_USER', 'myuser'),
+#         'PASSWORD': os.environ.get('DB_PASSWORD', 'mypassword'),
+#         'HOST': os.environ.get('DB_HOST', 'localhost'),
+#         'PORT': os.environ.get('DB_PORT', '5432'),
+#         'CONN_MAX_AGE': 600,  # Persistent connections (in seconds)
+#         'OPTIONS': {
+#             # 'sslmode': os.environ.get('DB_SSLMODE', 'require'),
+#             'connect_timeout': 10,
+#         },
+#     }
+# }
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'mydb'),
-        'USER': os.environ.get('DB_USER', 'myuser'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'mypassword'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
-        'CONN_MAX_AGE': 600,  # Persistent connections (in seconds)
-        'OPTIONS': {
-            # 'sslmode': os.environ.get('DB_SSLMODE', 'require'),
-            'connect_timeout': 10,
-        },
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
@@ -123,6 +131,8 @@ USE_I18N = True
 USE_TZ = True
 
 STATIC_URL = "static/"
+MEDIA_URL = "/media/"
+MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
@@ -167,6 +177,11 @@ AI_LAYER_BASE_URL = os.environ.get("AI_LAYER_BASE_URL", "http://localhost:8001")
 AI_LAYER_INGEST_PATH = "/api/v1/ingest"
 AI_LAYER_SYNC_TIMEOUT_SECONDS = float(os.environ.get("AI_LAYER_SYNC_TIMEOUT_SECONDS", "5"))
 AI_LAYER_SYNC_ENABLED = os.environ.get("AI_LAYER_SYNC_ENABLED", "true").lower() == "true"
+AI_LAYER_DOCUMENT_INGEST_PATH = "/api/v1/documents/ingest"
+AI_LAYER_DOCUMENT_TIMEOUT_SECONDS = float(
+    os.environ.get("AI_LAYER_DOCUMENT_TIMEOUT_SECONDS", "120")
+)
+AI_LAYER_INGEST_API_KEY = os.environ.get("AI_LAYER_INGEST_API_KEY", "")
 
 # Institution identity used when this instance registers itself as a
 # provider on the KilimoSTACK / Beckn network.
