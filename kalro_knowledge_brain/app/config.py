@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -20,8 +22,11 @@ class Settings(BaseSettings):
     ollama_request_timeout_seconds: float = 120.0
 
     # Vector store (Chroma, persisted to disk)
-    chroma_persist_dir: str = "./chroma_data"
+    chroma_persist_dir: str = str(
+        Path(__file__).resolve().parents[1] / "chroma_data"
+    )
     chroma_collection_name: str = "kalro_advisory_corpus"
+    chroma_documents_collection_name: str = "kalro_training_documents"
 
     # Retrieval / generation behaviour
     default_top_k: int = 5

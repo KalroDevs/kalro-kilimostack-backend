@@ -15,27 +15,10 @@ import logging
 
 from .ollama_client import ollama_client
 from .schemas import AdvisoryResource, ContentSection
+from .text_processing import split_long_text
 from .vector_store import vector_store
 
 logger = logging.getLogger(__name__)
-
-MAX_CHUNK_CHARS = 1800
-
-
-def _split_long_text(text: str, max_chars: int = MAX_CHUNK_CHARS) -> list[str]:
-    if len(text) <= max_chars:
-        return [text]
-    paragraphs = [p.strip() for p in text.split("\n") if p.strip()] or [text]
-    chunks, current = [], ""
-    for para in paragraphs:
-        if len(current) + len(para) + 1 > max_chars and current:
-            chunks.append(current.strip())
-            current = para
-        else:
-            current = f"{current}\n{para}".strip()
-    if current:
-        chunks.append(current.strip())
-    return chunks
 
 
 def _build_metadata(resource: AdvisoryResource, section: ContentSection, chunk_index: int) -> dict:
@@ -86,7 +69,7 @@ async def ingest_resource(resource: AdvisoryResource) -> int:
 
     ids, embeddings, documents, metadatas = [], [], [], []
     for section in resource.content:
-        sub_chunks = _split_long_text(section.content_text)
+        sub_chunks = split_long_text(section.content_text)
         for i, chunk_text in enumerate(sub_chunks):
             # Prepend header/context so the embedding captures topical framing,
             # not just the raw paragraph.

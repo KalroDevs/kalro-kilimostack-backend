@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
-from .routers import chat, health, ingest
+from .routers import chat, documents, health, ingest
 
 app = FastAPI(
     title=settings.app_name,
@@ -24,6 +24,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(ingest.router)
+app.include_router(documents.router)
 app.include_router(chat.router)
 
 
@@ -32,5 +33,10 @@ async def root():
     return {
         "service": settings.app_name,
         "docs": "/docs",
-        "endpoints": ["/health", "/api/v1/ingest", "/api/v1/chat"],
+        "endpoints": [
+            "/health",
+            "/api/v1/ingest",
+            "/api/v1/documents/ingest",
+            "/api/v1/chat",
+        ],
     }

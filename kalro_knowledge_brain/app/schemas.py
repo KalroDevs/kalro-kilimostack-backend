@@ -117,6 +117,12 @@ class IngestResponse(BaseModel):
     errors: list[dict] = Field(default_factory=list)
 
 
+class DocumentIngestResponse(BaseModel):
+    document_id: str
+    status: str
+    chunks_indexed: int
+
+
 class ChatFilters(BaseModel):
     sector: Optional[str] = None
     value_chain: Optional[str] = None
