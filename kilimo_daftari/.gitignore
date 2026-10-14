@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Django
+db.sqlite3
+staticfiles/
+media/
+
+# AI Layer
+ai_layer/chroma_data/
+kalro_knowledge_brain/chroma_data/
+
+# Env files
+.env
+*/.env
+env
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+__pycache__/
+__init__.py
+0001_*.py
+0002_*.py
+0003_*.py
