@@ -98,7 +98,7 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             "title",
             "link",
             "publication_id",
-            "thumbnail",
+            # "thumbnail",
             "institution",
             "author",
             "publish_date",

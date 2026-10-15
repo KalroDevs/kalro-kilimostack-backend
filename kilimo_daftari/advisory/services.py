@@ -10,6 +10,7 @@ README "Production Hardening Notes").
 """
 
 import logging
+from pathlib import Path
 from django.conf import settings
 from django.utils import timezone
 
@@ -46,9 +47,13 @@ def sync_resource_to_ai_layer(resource: AdvisoryResource) -> bool:
     resource.save(update_fields=["vector_sync_status"])
 
     try:
+        headers = {}
+        if settings.AI_LAYER_INGEST_API_KEY:
+            headers["X-API-Key"] = settings.AI_LAYER_INGEST_API_KEY
         response = httpx.post(
             url,
             json=[payload],
+            headers=headers,
             timeout=settings.AI_LAYER_SYNC_TIMEOUT_SECONDS,
         )
         response.raise_for_status()
@@ -56,6 +61,12 @@ def sync_resource_to_ai_layer(resource: AdvisoryResource) -> bool:
         resource.vector_synced_at = timezone.now()
         resource.vector_sync_error = ""
         resource.save(update_fields=["vector_sync_status", "vector_synced_at", "vector_sync_error"])
+        # The section text is synced above. If the resource also has an
+        # uploaded file, index it through the same AI Layer document pipeline
+        # used by the admin-only Documents section.
+        if resource.upload_file:
+            if not _sync_resource_file_to_ai_layer(resource):
+                return False
         logger.info("Synced %s to AI Layer (%s)", resource.publication_id, url)
         return True
     except Exception as exc:  # noqa: BLE001 - best-effort sync, log and continue
@@ -63,6 +74,34 @@ def sync_resource_to_ai_layer(resource: AdvisoryResource) -> bool:
         resource.vector_sync_error = str(exc)
         resource.save(update_fields=["vector_sync_status", "vector_sync_error"])
         logger.warning("Failed to sync %s to AI Layer: %s", resource.publication_id, exc)
+        return False
+
+
+def _sync_resource_file_to_ai_layer(resource: AdvisoryResource) -> bool:
+    filename = Path(resource.upload_file.name).name
+    url = f"{settings.AI_LAYER_BASE_URL}{settings.AI_LAYER_DOCUMENT_INGEST_PATH}"
+    headers = {}
+    if settings.AI_LAYER_INGEST_API_KEY:
+        headers["X-API-Key"] = settings.AI_LAYER_INGEST_API_KEY
+    try:
+        with resource.upload_file.open("rb") as file_handle:
+            response = httpx.post(
+                url,
+                data={"document_id": f"advisory-{resource.publication_id}", "name": resource.title},
+                files={"file": (filename, file_handle, "application/octet-stream")},
+                headers=headers,
+                timeout=settings.AI_LAYER_DOCUMENT_TIMEOUT_SECONDS,
+            )
+        response.raise_for_status()
+        result = response.json()
+        if result.get("status") != "verified" or result.get("chunks_indexed", 0) < 1:
+            raise ValueError("AI Layer returned an invalid advisory file ingestion response.")
+        return True
+    except Exception as exc:  # best effort failure is surfaced in the sync status
+        resource.vector_sync_status = VectorSyncStatusChoices.FAILED
+        resource.vector_sync_error = f"Advisory file indexing failed: {type(exc).__name__}"
+        resource.save(update_fields=["vector_sync_status", "vector_sync_error"])
+        logger.warning("Failed to index uploaded advisory file for %s (%s)", resource.publication_id, type(exc).__name__)
         return False
 
 

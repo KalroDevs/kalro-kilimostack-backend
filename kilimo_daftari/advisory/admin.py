@@ -124,8 +124,9 @@ class AdvisoryResourceAdmin(ImportExportModelAdmin):
                 "fields": (
                     "title",
                     "link",
+                    "upload_file",
                     "publication_id",
-                    "thumbnail",
+                    # "thumbnail",
                     "institution",
                     "author",
                     "publish_date",

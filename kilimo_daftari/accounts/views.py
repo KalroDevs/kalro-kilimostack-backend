@@ -44,7 +44,7 @@ class LoginView(APIView):
             return Response({"detail": "This account is disabled."}, status=status.HTTP_403_FORBIDDEN)
 
         token, _ = Token.objects.get_or_create(user=user)
-        return Response({"token": token.key, "user": CurrentUserSerializer(user).data})
+        return Response({"token": token.key, "access": token.key, "user": CurrentUserSerializer(user).data})
 
 
 class MeView(APIView):

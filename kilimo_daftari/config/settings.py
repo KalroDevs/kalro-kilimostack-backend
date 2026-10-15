@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "providers",
     "accounts",
     "documents",
+    # "kalro_knowledge_brain.app",
 ]
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
@@ -181,6 +182,7 @@ AI_LAYER_DOCUMENT_INGEST_PATH = "/api/v1/documents/ingest"
 AI_LAYER_DOCUMENT_TIMEOUT_SECONDS = float(
     os.environ.get("AI_LAYER_DOCUMENT_TIMEOUT_SECONDS", "120")
 )
+AI_LAYER_CHAT_TIMEOUT_SECONDS = float(os.environ.get("AI_LAYER_CHAT_TIMEOUT_SECONDS", "310"))
 AI_LAYER_INGEST_API_KEY = os.environ.get("AI_LAYER_INGEST_API_KEY", "")
 
 # Institution identity used when this instance registers itself as a

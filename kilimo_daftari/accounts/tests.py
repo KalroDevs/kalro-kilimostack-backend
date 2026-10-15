@@ -50,6 +50,7 @@ class LoginLogoutTests(TestCase):
         )
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(resp.data["token"], Token.objects.get(user=self.user).key)
+        self.assertEqual(resp.data["access"], resp.data["token"])
 
     def test_login_with_wrong_password_is_rejected(self):
         client = APIClient()

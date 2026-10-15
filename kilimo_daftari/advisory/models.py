@@ -97,9 +97,10 @@ class AdvisoryResource(models.Model):
 
     # -- Core resource fields (JSON spec section 1) -------------------------
     title = models.CharField(max_length=500)
-    link = models.URLField(max_length=1000)
+    link = models.URLField(max_length=1000, null=True, blank=True, default="")
+    upload_file = models.FileField(upload_to="advisory_uploads/", blank=True, null=True)
     publication_id = models.CharField(max_length=200, unique=True)
-    thumbnail = models.URLField(max_length=1000, blank=True, default="")
+    # thumbnail = models.URLField(max_length=1000, blank=True, default="")
     institution = models.CharField(
         max_length=300, default="Kenya Agricultural and Livestock Research Organization"
     )
