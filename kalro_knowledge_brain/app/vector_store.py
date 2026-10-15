@@ -81,6 +81,29 @@ class VectorStore:
             where=where or None,
         )
 
+    def query_all(self, query_embedding: list[float], top_k: int = 5, include_documents: bool = True, where: dict[str, Any] | None = None) -> list[dict]:
+        
+        collections = [("advisory", self._collection)]
+        if include_documents:
+            collections.append(("document", self._documents_collection))
+        matches = []
+        for source_type, collection in collections:
+            if collection.count() == 0:
+                continue
+            result = collection.query(
+                query_embeddings=[query_embedding], n_results=top_k,
+                where=(where if source_type == "advisory" else None) or None,
+            )
+            for i, chunk in enumerate(result.get("documents", [[]])[0]):
+                matches.append({
+                    "document": chunk,
+                    "metadata": (result.get("metadatas", [[]])[0] or [{}])[i] or {},
+                    "distance": (result.get("distances", [[]])[0] or [None] * (i + 1))[i],
+                    "id": (result.get("ids", [[]])[0] or [""] * (i + 1))[i],
+                    "source_type": source_type,
+                })
+        return sorted(matches, key=lambda match: match["distance"] if match["distance"] is not None else float("inf"))[:top_k]
+
     def count(self) -> int:
         return self._collection.count()
 

@@ -19,16 +19,14 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1"
     ollama_embed_model: str = "nomic-embed-text"
-    ollama_request_timeout_seconds: float = 120.0
+    ollama_request_timeout_seconds: float = 300.0
 
-    # Vector store (Chroma, persisted to disk)
     chroma_persist_dir: str = str(
         Path(__file__).resolve().parents[1] / "chroma_data"
     )
-    chroma_collection_name: str = "kalro_advisory_corpus"
+    chroma_collection_name: str = "kalro_advisory_corpus_v2"
     chroma_documents_collection_name: str = "kalro_training_documents"
 
-    # Retrieval / generation behaviour
     default_top_k: int = 5
     max_context_chars: int = 6000
 

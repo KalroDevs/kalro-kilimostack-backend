@@ -1,26 +1,14 @@
-"""
-Thin async client for a self-hosted Ollama server, used for both:
-
-  * embeddings (POST /api/embeddings) -- to build & query the vector index
-  * chat generation (POST /api/chat) -- to produce grounded RAG answers
-
-No external Ollama SDK dependency is required; this talks to Ollama's REST
-API directly over httpx so the AI Layer has a minimal dependency footprint.
-"""
+﻿"""Thin asynchronous REST client for Ollama embeddings and chat generation."""
 
 from __future__ import annotations
-
-import logging
 
 import httpx
 
 from .config import settings
 
-logger = logging.getLogger(__name__)
-
 
 class OllamaError(RuntimeError):
-    pass
+    """A safe, actionable provider error without request URLs or credentials."""
 
 
 class OllamaClient:
@@ -30,23 +18,33 @@ class OllamaClient:
             base_url=self.base_url, timeout=settings.ollama_request_timeout_seconds
         )
 
+    @staticmethod
+    def _provider_detail(response: httpx.Response) -> str:
+        try:
+            detail = response.json().get("error", "")
+        except (ValueError, AttributeError):
+            detail = ""
+        return str(detail)[:240] or "no provider detail"
+
     async def embed(self, text: str, model: str | None = None) -> list[float]:
         model = model or settings.ollama_embed_model
         try:
             resp = await self._client.post("/api/embeddings", json={"model": model, "prompt": text})
             resp.raise_for_status()
-            data = resp.json()
-            embedding = data.get("embedding")
+            embedding = resp.json().get("embedding")
             if not embedding:
-                raise OllamaError(f"Ollama returned no embedding for model={model!r}")
+                raise OllamaError(f"Ollama returned no embedding for model {model!r}.")
             return embedding
+        except httpx.TimeoutException as exc:
+            raise OllamaError(f"Ollama embedding request timed out after {settings.ollama_request_timeout_seconds:g} seconds.") from exc
+        except httpx.HTTPStatusError as exc:
+            detail = self._provider_detail(exc.response)
+            raise OllamaError(f"Ollama embedding request returned HTTP {exc.response.status_code}: {detail}") from exc
         except httpx.HTTPError as exc:
-            raise OllamaError(f"Ollama embeddings call failed: {exc}") from exc
+            raise OllamaError(f"Ollama embedding request failed ({type(exc).__name__}).") from exc
 
     async def embed_many(self, texts: list[str], model: str | None = None) -> list[list[float]]:
-        # Ollama's /api/embeddings endpoint is single-prompt; batch sequentially.
-        # (Swap for a batched embeddings endpoint if your Ollama build supports it.)
-        return [await self.embed(t, model=model) for t in texts]
+        return [await self.embed(text, model=model) for text in texts]
 
     async def chat(
         self,
@@ -68,10 +66,17 @@ class OllamaClient:
         try:
             resp = await self._client.post("/api/chat", json=payload)
             resp.raise_for_status()
-            data = resp.json()
-            return data.get("message", {}).get("content", "").strip()
+            answer = resp.json().get("message", {}).get("content", "").strip()
+            if not answer:
+                raise OllamaError("Ollama returned an empty chat response.")
+            return answer
+        except httpx.TimeoutException as exc:
+            raise OllamaError(f"Ollama chat request timed out after {settings.ollama_request_timeout_seconds:g} seconds.") from exc
+        except httpx.HTTPStatusError as exc:
+            detail = self._provider_detail(exc.response)
+            raise OllamaError(f"Ollama chat request returned HTTP {exc.response.status_code}: {detail}") from exc
         except httpx.HTTPError as exc:
-            raise OllamaError(f"Ollama chat call failed: {exc}") from exc
+            raise OllamaError(f"Ollama chat request failed ({type(exc).__name__}).") from exc
 
     async def health(self) -> bool:
         try:

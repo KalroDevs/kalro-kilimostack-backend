@@ -1,4 +1,7 @@
 Django
+django-admin-interface
+django-colorfield
+django-import-export
 djangorestframework
 django-filter
 django-cors-headers

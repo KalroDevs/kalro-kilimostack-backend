@@ -5,5 +5,8 @@ pydantic-settings
 httpx
 chromadb
 python-multipart
+pypdf
+python-docx
+openpyxl
 pytest
 pytest-asyncio

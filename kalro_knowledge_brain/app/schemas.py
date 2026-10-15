@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class GeographicApplicability(BaseModel):
@@ -131,10 +131,19 @@ class ChatFilters(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    query: str
-    top_k: int = 5
+    query: str = Field(min_length=1, max_length=4000)
+    top_k: int = Field(default=5, ge=1, le=20)
     filters: Optional[ChatFilters] = None
     language: str = "en"
+    include_training_documents: bool = False
+
+    @field_validator("query")
+    @classmethod
+    def strip_query(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Question cannot be blank.")
+        return value
 
 
 class SourceCitation(BaseModel):
@@ -144,6 +153,9 @@ class SourceCitation(BaseModel):
     content_id: str
     content_header: str
     score: float
+    content: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    source_type: str = "advisory"
 
 
 class ChatResponse(BaseModel):
@@ -152,3 +164,5 @@ class ChatResponse(BaseModel):
     safety_notice: Optional[str] = None
     risk_level: Optional[str] = None
     model: str
+    retrieval: dict[str, Any] = Field(default_factory=dict)
+    generation: dict[str, Any] = Field(default_factory=dict)
