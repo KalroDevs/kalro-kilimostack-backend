@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 async def chat(request: ChatRequest) -> ChatResponse:
     try:
         return await answer_query(query=request.query, top_k=request.top_k, filters=request.filters,
-                                  include_training_documents=request.include_training_documents)
+                                  include_training_documents=request.include_training_documents,
+                                  additional_context=request.additional_context)
     except (OllamaError, TimeoutError) as exc:
         logger.warning("RAG provider unavailable: %s", exc)
         raise HTTPException(status_code=503, detail="The retrieval or generation service is unavailable.") from exc

@@ -24,8 +24,8 @@ class Settings(BaseSettings):
     chroma_persist_dir: str = str(
         Path(__file__).resolve().parents[1] / "chroma_data"
     )
-    chroma_collection_name: str = "kalro_advisory_corpus_v2"
-    chroma_documents_collection_name: str = "kalro_training_documents"
+    chroma_collection_name: str = "kalro_advisory_corpus_v3"
+    chroma_documents_collection_name: str = "kalro_training_documents_v2"
 
     default_top_k: int = 5
     max_context_chars: int = 6000

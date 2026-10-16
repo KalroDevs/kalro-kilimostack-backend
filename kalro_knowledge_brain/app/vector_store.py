@@ -12,12 +12,16 @@ README "Production Hardening Notes".
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from chromadb.errors import InvalidArgumentError
 
 from .config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class VectorStore:
@@ -90,10 +94,19 @@ class VectorStore:
         for source_type, collection in collections:
             if collection.count() == 0:
                 continue
-            result = collection.query(
-                query_embeddings=[query_embedding], n_results=top_k,
-                where=(where if source_type == "advisory" else None) or None,
-            )
+            try:
+                result = collection.query(
+                    query_embeddings=[query_embedding], n_results=top_k,
+                    where=(where if source_type == "advisory" else None) or None,
+                )
+            except InvalidArgumentError as exc:
+                logger.warning(
+                    "Skipping Chroma %s collection because its embedding dimension "
+                    "does not match the configured embedding model: %s",
+                    source_type,
+                    exc,
+                )
+                continue
             for i, chunk in enumerate(result.get("documents", [[]])[0]):
                 matches.append({
                     "document": chunk,

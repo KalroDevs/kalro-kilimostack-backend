@@ -130,12 +130,21 @@ class ChatFilters(BaseModel):
     max_risk_level: Optional[str] = None  # "low" | "medium" | "high" ceiling, informational
 
 
+class AdditionalContext(BaseModel):
+    id: str
+    source_type: str
+    score: float = Field(ge=0, le=1)
+    content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ChatRequest(BaseModel):
     query: str = Field(min_length=1, max_length=4000)
     top_k: int = Field(default=5, ge=1, le=20)
     filters: Optional[ChatFilters] = None
     language: str = "en"
     include_training_documents: bool = False
+    additional_context: list[AdditionalContext] = Field(default_factory=list, max_length=20)
 
     @field_validator("query")
     @classmethod
