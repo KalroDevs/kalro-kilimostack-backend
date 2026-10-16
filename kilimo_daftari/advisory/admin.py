@@ -254,6 +254,7 @@ class ContentSectionInline(admin.TabularInline):
     fields = (
         "reading_order",
         "content_id",
+        "pages_reference",
         "content_header",
         "status",
         "review_stage",

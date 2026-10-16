@@ -36,6 +36,7 @@ from django.utils import timezone
 from .models import (
     AdvisoryResource,
     ContentSection,
+    QualityFlagChoices,
     VectorSyncStatusChoices,
 )
 from .serializers import AdvisoryResourceSerializer
@@ -99,6 +100,14 @@ def _cfg(name: str, default):
     return getattr(settings, name, default)
 
 
+def _resource_reference(resource: AdvisoryResource) -> str:
+    return (
+        resource.workbook_source_reference
+        or resource.workbook_resource_id
+        or str(resource.pk)
+    )
+
+
 def _sync_enabled() -> bool:
     return bool(_cfg("AI_LAYER_SYNC_ENABLED", False))
 
@@ -159,6 +168,23 @@ def _build_payload(resource: AdvisoryResource) -> tuple[dict, int]:
     with the number of sections that were excluded.
     """
     payload = AdvisoryResourceSerializer(resource).data
+    # The AI Layer consumes the import-spec fields. Workbook imports use
+    # workbook IDs and M2M value chains, while the current Django model no
+    # longer has the old flat publication_id/value_chain fields.
+    payload["publication_id"] = _resource_reference(resource)
+    payload["value_chain"] = resource.value_chains.order_by("name").values_list("name", flat=True).first() or ""
+    payload["commodity"] = payload.get("commodity") or []
+    payload["institution"] = resource.institution.name if resource.institution_id else "Kenya Agricultural and Livestock Research Organization"
+    for date_field in ("modified_date", "review_date", "next_review_date"):
+        value = payload.get(date_field)
+        payload[date_field] = value.isoformat() if hasattr(value, "isoformat") else (value or "")
+    payload["advisory_safety"] = {
+        "risk_level": resource.risk_level,
+        "risk_domains": resource.risk_domains,
+        "requires_human_review": resource.requires_human_review,
+        "escalation_guidance": resource.escalation_guidance,
+        "disclaimer": resource.safety_disclaimer,
+    }
     # Narrow the nested `content` array to eligible sections only.
     eligible_sections, skipped = _sections_for_payload(resource)
     if skipped:
@@ -277,6 +303,7 @@ def sync_resource_to_ai_layer(
     *,
     force: bool = False,
     raise_on_error: bool = False,
+    allow_validated_workbook_content: bool = False,
 ) -> SyncResult:
     """
     POST a single resource (spec-shaped JSON) to the AI Layer's ingest
@@ -298,13 +325,20 @@ def sync_resource_to_ai_layer(
         ``status`` is one of ``"synced"``, ``"not_modified"``, ``"skipped"``
         or ``"failed"``.
     """
-    pub_id = resource.publication_id
+    pub_id = _resource_reference(resource)
 
     if not _sync_enabled():
         logger.info("AI Layer sync disabled; skipping %s", pub_id)
         return SyncResult(publication_id=pub_id, status="skipped", reason="sync_disabled")
 
-    if not resource.is_ready_for_ai_layer:
+    eligible_sections, skipped_count = _sections_for_payload(resource)
+    workbook_content_ready = (
+        allow_validated_workbook_content
+        and bool(resource.workbook_resource_id)
+        and resource.quality_flag in ("", QualityFlagChoices.READY_TO_CERTIFY)
+        and bool(eligible_sections)
+    )
+    if not resource.is_ready_for_ai_layer and not workbook_content_ready:
         logger.info(
             "Skipping AI Layer sync for %s: quality_flag=%s advisory_status=%s",
             pub_id, resource.quality_flag, resource.advisory_status,
@@ -315,7 +349,6 @@ def sync_resource_to_ai_layer(
             reason="not_ready_for_ai_layer",
         )
 
-    eligible_sections, skipped_count = _sections_for_payload(resource)
     if not eligible_sections:
         logger.info(
             "Skipping AI Layer sync for %s: no eligible sections to embed.", pub_id
@@ -348,7 +381,11 @@ def sync_resource_to_ai_layer(
     url = _endpoint()
 
     try:
-        success, error, attempts = _post_with_retries(url, [payload], _timeout())
+        timeout = (
+            float(_cfg("AI_LAYER_WORKBOOK_SYNC_TIMEOUT_SECONDS", 300))
+            if allow_validated_workbook_content else _timeout()
+        )
+        success, error, attempts = _post_with_retries(url, [payload], timeout)
     except Exception as exc:  # noqa: BLE001
         if raise_on_error:
             raise
@@ -389,7 +426,12 @@ def sync_resource_to_ai_layer(
     )
 
 
-def sync_batch(resources: Iterable[AdvisoryResource], *, force: bool = False) -> BatchSyncResult:
+def sync_batch(
+    resources: Iterable[AdvisoryResource],
+    *,
+    force: bool = False,
+    allow_validated_workbook_content: bool = False,
+) -> BatchSyncResult:
     """
     Sync many resources. Batches the HTTP POST into groups of
     ``AI_LAYER_SYNC_BATCH_SIZE`` to reduce request overhead, and falls back
@@ -403,19 +445,25 @@ def sync_batch(resources: Iterable[AdvisoryResource], *, force: bool = False) ->
     for resource in resources:
         if not _sync_enabled():
             batch.results.append(
-                SyncResult(resource.publication_id, "skipped", reason="sync_disabled")
-            )
-            continue
-        if not resource.is_ready_for_ai_layer:
-            batch.results.append(
-                SyncResult(resource.publication_id, "skipped", reason="not_ready_for_ai_layer")
+                SyncResult(_resource_reference(resource), "skipped", reason="sync_disabled")
             )
             continue
         eligible, skipped = _sections_for_payload(resource)
+        workbook_content_ready = (
+            allow_validated_workbook_content
+            and bool(resource.workbook_resource_id)
+            and resource.quality_flag in ("", QualityFlagChoices.READY_TO_CERTIFY)
+            and bool(eligible)
+        )
+        if not resource.is_ready_for_ai_layer and not workbook_content_ready:
+            batch.results.append(
+                SyncResult(_resource_reference(resource), "skipped", reason="not_ready_for_ai_layer")
+            )
+            continue
         if not eligible:
             batch.results.append(
                 SyncResult(
-                    resource.publication_id,
+                    _resource_reference(resource),
                     "skipped",
                     reason="no_eligible_sections",
                     chunks_skipped=skipped,
@@ -428,12 +476,26 @@ def sync_batch(resources: Iterable[AdvisoryResource], *, force: bool = False) ->
     size = max(1, _batch_size())
     for start in range(0, len(ready), size):
         chunk = ready[start : start + size]
-        batch.results.extend(_sync_one_batch(chunk, force=force))
+        batch.results.extend(_sync_one_batch(
+            chunk,
+            force=force,
+            allow_validated_workbook_content=allow_validated_workbook_content,
+        ))
 
     return batch
 
 
-def _sync_one_batch(resources: list[AdvisoryResource], *, force: bool) -> list[SyncResult]:
+def sync_validated_workbook_resources(resources: Iterable[AdvisoryResource]) -> BatchSyncResult:
+    """Index validated, unflagged sections from workbook resources after import."""
+    return sync_batch(resources, force=True, allow_validated_workbook_content=True)
+
+
+def _sync_one_batch(
+    resources: list[AdvisoryResource],
+    *,
+    force: bool,
+    allow_validated_workbook_content: bool = False,
+) -> list[SyncResult]:
     """Sync a single chunk of resources. Falls back to per-resource on error."""
     if not resources:
         return []
@@ -459,7 +521,7 @@ def _sync_one_batch(resources: list[AdvisoryResource], *, force: bool) -> list[S
         ):
             results.append(
                 SyncResult(
-                    resource.publication_id,
+                    _resource_reference(resource),
                     "not_modified",
                     chunks_sent=len(payload.get("content", [])),
                     chunks_skipped=skipped,
@@ -484,13 +546,17 @@ def _sync_one_batch(resources: list[AdvisoryResource], *, force: bool) -> list[S
     batch_payload = [payload for _, _, payload in to_send]
 
     try:
-        success, error, attempts = _post_with_retries(url, batch_payload, _timeout())
+        timeout = (
+            float(_cfg("AI_LAYER_WORKBOOK_SYNC_TIMEOUT_SECONDS", 300))
+            if allow_validated_workbook_content else _timeout()
+        )
+        success, error, attempts = _post_with_retries(url, batch_payload, timeout)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Unexpected error syncing batch of %s", len(to_send))
         for resource, skipped, _ in to_send:
             _mark_failed(resource, str(exc))
             results.append(
-                SyncResult(resource.publication_id, "failed", reason=str(exc), chunks_skipped=skipped)
+                SyncResult(_resource_reference(resource), "failed", reason=str(exc), chunks_skipped=skipped)
             )
         return results
 
@@ -499,7 +565,7 @@ def _sync_one_batch(resources: list[AdvisoryResource], *, force: bool) -> list[S
             _mark_synced(resource)
             results.append(
                 SyncResult(
-                    resource.publication_id,
+                    _resource_reference(resource),
                     "synced",
                     chunks_sent=len(payload.get("content", [])),
                     chunks_skipped=skipped,
@@ -516,7 +582,11 @@ def _sync_one_batch(resources: list[AdvisoryResource], *, force: bool) -> list[S
         error, len(to_send),
     )
     for resource, skipped, _ in to_send:
-        individual = sync_resource_to_ai_layer(resource, force=True)
+        individual = sync_resource_to_ai_layer(
+            resource,
+            force=True,
+            allow_validated_workbook_content=allow_validated_workbook_content,
+        )
         if skipped and individual.chunks_skipped == 0:
             individual.chunks_skipped = skipped
         results.append(individual)

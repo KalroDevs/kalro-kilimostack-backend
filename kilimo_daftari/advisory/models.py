@@ -294,6 +294,8 @@ class AdvisoryResource(models.Model):
 
     # -- Core resource fields (JSON spec section 1) -------------------------
     title = models.CharField(max_length=500)
+    workbook_resource_id = models.CharField(max_length=120, unique=True, null=True, blank=True, db_index=True)
+    workbook_source_reference = models.CharField(max_length=1000, blank=True, default="")
     slug = models.SlugField(max_length=520, unique=True, blank=True)
     link = models.URLField(max_length=1000, blank=True, default="")
     institution = models.ForeignKey(
@@ -577,6 +579,7 @@ class ContentSection(models.Model):
         AdvisoryResource, related_name="content_sections", on_delete=models.CASCADE
     )
     content_id = models.CharField(max_length=200, unique=True)
+    pages_reference = models.CharField(max_length=120, blank=True, default="")
     reading_order = models.PositiveIntegerField()
     content_header = models.CharField(max_length=300, blank=True, default="")
     content_text = models.TextField()

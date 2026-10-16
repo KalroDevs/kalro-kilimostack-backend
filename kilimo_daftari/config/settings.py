@@ -30,8 +30,8 @@ ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 INSTALLED_APPS = [
     # "unfold",
-    "admin_interface",
-    "colorfield",
+    # "admin_interface",
+    # "colorfield",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -95,19 +95,26 @@ ASGI_APPLICATION = "config.asgi.application"
 #     )
 # }
 
+# DATABASES = {
+#     'default': {
+#         'ENGINE': 'django.db.backends.postgresql',
+#         'NAME': os.environ.get('DB_NAME', 'mydb'),
+#         'USER': os.environ.get('DB_USER', 'myuser'),
+#         'PASSWORD': os.environ.get('DB_PASSWORD', 'mypassword'),
+#         'HOST': os.environ.get('DB_HOST', 'localhost'),
+#         'PORT': os.environ.get('DB_PORT', '5432'),
+#         'CONN_MAX_AGE': 600,  # Persistent connections (in seconds)
+#         'OPTIONS': {
+#             # 'sslmode': os.environ.get('DB_SSLMODE', 'require'),
+#             'connect_timeout': 10,
+#         },
+#     }
+# }
+
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.environ.get('DB_NAME', 'mydb'),
-        'USER': os.environ.get('DB_USER', 'myuser'),
-        'PASSWORD': os.environ.get('DB_PASSWORD', 'mypassword'),
-        'HOST': os.environ.get('DB_HOST', 'localhost'),
-        'PORT': os.environ.get('DB_PORT', '5432'),
-        'CONN_MAX_AGE': 600,  # Persistent connections (in seconds)
-        'OPTIONS': {
-            # 'sslmode': os.environ.get('DB_SSLMODE', 'require'),
-            'connect_timeout': 10,
-        },
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 

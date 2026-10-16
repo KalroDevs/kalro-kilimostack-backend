@@ -214,6 +214,7 @@ class ContentSectionSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "content_id",
+            "pages_reference",
             "reading_order",
             "content_header",
             "content_text",
@@ -297,6 +298,7 @@ class ContentSectionListSerializer(serializers.ModelSerializer):
         fields = (
             "id",
             "content_id",
+            "pages_reference",
             "resource",
             "resource_slug",
             "reading_order",

@@ -38,6 +38,8 @@ from __future__ import annotations
 
 import logging
 
+import httpx
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.db.models import Count
@@ -672,3 +674,39 @@ class HealthView(APIView):
 
     def get(self, request):
         return Response({"status": "ok", "time": timezone.now()})
+
+
+class AskView(APIView):
+    """Proxy the public advisory Q&A request to the configured AI Layer."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        query = request.data.get("query")
+        if not isinstance(query, str) or not query.strip():
+            return Response({"query": ["A non-empty query is required."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        payload = {"query": query.strip()}
+        for key in ("top_k", "filters", "language"):
+            if key in request.data:
+                payload[key] = request.data[key]
+
+        base_url = getattr(settings, "AI_LAYER_BASE_URL", "http://localhost:8001").rstrip("/")
+        endpoint = f"{base_url}/api/v1/chat"
+        timeout = float(getattr(settings, "AI_LAYER_CHAT_TIMEOUT_SECONDS", 30))
+        try:
+            result = httpx.post(endpoint, json=payload, timeout=timeout)
+        except httpx.RequestError as exc:
+            logger.warning("AI Layer chat request failed: %s", exc)
+            return Response(
+                {"error": "The advisory AI service is unavailable. Try again shortly."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        try:
+            response_body = result.json()
+        except ValueError:
+            response_body = {"error": "The advisory AI service returned an invalid response."}
+        if not result.is_success and not isinstance(response_body, dict):
+            response_body = {"error": "The advisory AI service could not answer the request."}
+        return Response(response_body, status=result.status_code)
