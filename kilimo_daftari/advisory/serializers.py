@@ -25,14 +25,63 @@ from rest_framework import serializers
 from .models import (
     AdvisoryResource,
     ContentSection,
+    LanguageChoices,
     ReviewDecisionChoices,
     SectionReviewLog,
+    SectorChoices,
     ThematicArea,
     ValueChain,
 )
 
 
 User = get_user_model()
+
+
+# ===========================================================================
+# Shared helpers
+# ===========================================================================
+def _normalize_slug_list(slugs):
+    """Strip, drop blanks, and de-duplicate while preserving order."""
+    if not slugs:
+        return []
+    seen = set()
+    out = []
+    for s in slugs:
+        s = (s or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def _resolve_slugs(model, slugs, field_label):
+    """
+    Turn a list of slugs into a list of model instances.
+
+    Raises a ``ValidationError`` naming every unknown slug so the API
+    consumer sees exactly what failed.
+    """
+    slugs = _normalize_slug_list(slugs)
+    if not slugs:
+        return []
+    objects = list(model.objects.filter(slug__in=slugs))
+    by_slug = {o.slug: o for o in objects}
+    missing = [s for s in slugs if s not in by_slug]
+    if missing:
+        raise serializers.ValidationError(
+            {field_label: f"Unknown slugs: {sorted(missing)}"}
+        )
+    return [by_slug[s] for s in slugs]
+
+
+def _apply_m2m(instance, slugs_by_field):
+    """Set each M2M field on ``instance`` from a {field_name: [slugs]} map."""
+    for field, slugs in (slugs_by_field or {}).items():
+        if slugs is None:
+            continue
+        model = instance._meta.get_field(field).related_model
+        objects = _resolve_slugs(model, slugs, f"{field}_slugs")
+        getattr(instance, field).set(objects)
 
 
 # ===========================================================================
@@ -59,7 +108,11 @@ class UserBriefSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_full_name(self, obj) -> str:
-        return obj.get_full_name() or obj.get_username()
+        if hasattr(obj, "get_full_name"):
+            name = obj.get_full_name() or ""
+            if name:
+                return name
+        return obj.get_username()
 
 
 # ===========================================================================
@@ -112,6 +165,10 @@ class ContentSectionSerializer(serializers.ModelSerializer):
     """
 
     content_id = serializers.CharField(validators=[])
+    content_text = serializers.CharField(
+        allow_blank=False,
+        trim_whitespace=False,
+    )
 
     # Read side
     value_chains = ValueChainBriefSerializer(many=True, read_only=True)
@@ -125,11 +182,13 @@ class ContentSectionSerializer(serializers.ModelSerializer):
         child=serializers.SlugField(),
         write_only=True,
         required=False,
+        allow_empty=True,
     )
     thematic_area_slugs = serializers.ListField(
         child=serializers.SlugField(),
         write_only=True,
         required=False,
+        allow_empty=True,
     )
 
     # Write side (user emails)
@@ -213,21 +272,8 @@ class ContentSectionSerializer(serializers.ModelSerializer):
 
     def validate_confidence_score(self, value):
         if value is not None and not 0 <= value <= 100:
-            raise serializers.ValidationError("confidence_score must be 0–100.")
+            raise serializers.ValidationError("confidence_score must be 0-100.")
         return value
-
-    # -- Helpers used by the parent resource serializer --------------------
-    @staticmethod
-    def _resolve_slugs(model, slugs, field_label):
-        if not slugs:
-            return []
-        objects = list(model.objects.filter(slug__in=slugs))
-        missing = set(slugs) - {o.slug for o in objects}
-        if missing:
-            raise serializers.ValidationError(
-                {field_label: f"Unknown slugs: {sorted(missing)}"}
-            )
-        return objects
 
     def pop_m2m_slugs(self, data):
         """Pop the write-only slug lists so the parent can sync them."""
@@ -237,12 +283,8 @@ class ContentSectionSerializer(serializers.ModelSerializer):
         }
 
     def apply_m2m(self, instance, slugs_by_field):
-        for field, slugs in (slugs_by_field or {}).items():
-            if slugs is None:
-                continue
-            model = ContentSection._meta.get_field(field).related_model
-            objects = self._resolve_slugs(model, slugs, f"{field}_slugs")
-            getattr(instance, field).set(objects)
+        """Kept for backward compatibility; delegates to the shared helper."""
+        _apply_m2m(instance, slugs_by_field)
 
 
 class ContentSectionListSerializer(serializers.ModelSerializer):
@@ -325,21 +367,16 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
         child=serializers.SlugField(),
         write_only=True,
         required=False,
+        allow_empty=True,
     )
 
     # Reviewer identity (read-only).
     screened_by = UserBriefSerializer(read_only=True)
     certified_by = UserBriefSerializer(read_only=True)
 
-    def validate_modified_date(self, value):
-        return value or None
-
-    def validate_review_date(self, value):
-        return value or None
-
-    def validate_next_review_date(self, value):
-        return value or None
-
+    # ------------------------------------------------------------------
+    # Input normalisation
+    # ------------------------------------------------------------------
     def to_internal_value(self, data):
         # Normalize "" -> None for optional date/datetime fields before DRF's
         # field-level parsing runs (DRF's DateField/DateTimeField reject ""
@@ -349,6 +386,44 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             if data.get(date_field) == "":
                 data[date_field] = None
         return super().to_internal_value(data)
+
+    # ------------------------------------------------------------------
+    # Field-level validation
+    # ------------------------------------------------------------------
+    def validate_sector(self, value):
+        valid = {c for c, _label in SectorChoices.choices}
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"sector must be one of {sorted(valid)}."
+            )
+        return value
+
+    def validate_language(self, value):
+        valid = {c for c, _label in LanguageChoices.choices}
+        if value not in valid:
+            raise serializers.ValidationError(
+                f"language must be one of {sorted(valid)}."
+            )
+        return value
+
+    def validate_content(self, value):
+        """
+        Guard the DB's ``UniqueConstraint(resource, reading_order)`` with a
+        friendly error instead of an IntegrityError.
+        """
+        if value is None:
+            return value
+        content_ids = [s.get("content_id") for s in value]
+        if len(content_ids) != len(set(content_ids)):
+            raise serializers.ValidationError(
+                "Duplicate content_id values in 'content'."
+            )
+        orders = [s.get("reading_order") for s in value]
+        if len(orders) != len(set(orders)):
+            raise serializers.ValidationError(
+                "Duplicate reading_order values in 'content'."
+            )
+        return value
 
     class Meta:
         model = AdvisoryResource
@@ -368,9 +443,6 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
 
             "value_chains",
             "value_chain_slugs",
-            "value_chain",
-
-            "commodity",
             "production_system",
             "advisory_domain",
             "target_users",
@@ -432,7 +504,9 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    # -- Output: rebuild the nested advisory_safety object -----------------
+    # ------------------------------------------------------------------
+    # Output: rebuild the nested advisory_safety object
+    # ------------------------------------------------------------------
     def get_advisory_safety_out(self, obj):
         return {
             "risk_level": obj.risk_level,
@@ -442,29 +516,46 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             "disclaimer": obj.safety_disclaimer,
         }
 
-    # -- Flatten nested input objects onto the model -----------------------
+    # ------------------------------------------------------------------
+    # Flatten nested input objects onto the model
+    # ------------------------------------------------------------------
+    # Mapping of nested safety keys -> flat model fields.
+    _SAFETY_FIELD_MAP = {
+        "risk_level": "risk_level",
+        "risk_domains": "risk_domains",
+        "requires_human_review": "requires_human_review",
+        "escalation_guidance": "escalation_guidance",
+        "disclaimer": "safety_disclaimer",
+    }
+
     def _flatten_advisory_safety(self, validated_data):
+        """
+        Copy the nested ``advisory_safety`` payload onto the flat model
+        fields. On a partial update, only the keys the caller actually sent
+        are copied, so omitting ``requires_human_review`` doesn't silently
+        reset it to False.
+        """
         safety = validated_data.pop("advisory_safety", None)
         if safety is None:
             return validated_data
-        validated_data["risk_level"] = safety.get("risk_level", "")
-        validated_data["risk_domains"] = safety.get("risk_domains", [])
-        validated_data["requires_human_review"] = safety.get(
-            "requires_human_review", False
-        )
-        validated_data["escalation_guidance"] = safety.get("escalation_guidance", "")
-        validated_data["safety_disclaimer"] = safety.get("disclaimer", "")
+        partial = bool(getattr(self, "partial", False))
+        for nested_key, model_field in self._SAFETY_FIELD_MAP.items():
+            if partial and nested_key not in safety:
+                continue
+            validated_data[model_field] = safety.get(
+                nested_key, "" if not isinstance(safety.get(nested_key), (list, bool)) else safety.get(nested_key)
+            )
         return validated_data
 
     def _sync_value_chains(self, instance, slugs):
         if slugs is None:
             return
-        chains = ContentSectionSerializer._resolve_slugs(
-            ValueChain, slugs, "value_chain_slugs"
-        )
+        chains = _resolve_slugs(ValueChain, slugs, "value_chain_slugs")
         instance.value_chains.set(chains)
 
-    # -- Create ------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Create
+    # ------------------------------------------------------------------
     def create(self, validated_data):
         sections_data = validated_data.pop("content_sections", []) or []
         vc_slugs = validated_data.pop("value_chain_slugs", None)
@@ -473,14 +564,19 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
         resource = AdvisoryResource.objects.create(**validated_data)
         self._sync_value_chains(resource, vc_slugs)
 
+        section_serializer = ContentSectionSerializer()
         for section_data in sections_data:
             section_data = dict(section_data)
-            m2m = ContentSectionSerializer().pop_m2m_slugs(section_data)
-            section = ContentSection.objects.create(resource=resource, **section_data)
-            ContentSectionSerializer().apply_m2m(section, m2m)
+            m2m = section_serializer.pop_m2m_slugs(section_data)
+            section = ContentSection.objects.create(
+                resource=resource, **section_data
+            )
+            _apply_m2m(section, m2m)
         return resource
 
-    # -- Update ------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Update
+    # ------------------------------------------------------------------
     def update(self, instance, validated_data):
         sections_data = validated_data.pop("content_sections", None)
         vc_slugs = validated_data.pop("value_chain_slugs", None)
@@ -494,7 +590,9 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             self._sync_value_chains(instance, vc_slugs)
 
         if sections_data is not None:
-            existing_ids = {s.content_id for s in instance.content_sections.all()}
+            existing_ids = {
+                s.content_id for s in instance.content_sections.all()
+            }
             incoming_ids = {s["content_id"] for s in sections_data}
             instance.content_sections.filter(
                 content_id__in=existing_ids - incoming_ids
@@ -507,7 +605,7 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
                     content_id=section_data["content_id"],
                     defaults={**section_data, "resource": instance},
                 )
-                ContentSectionSerializer().apply_m2m(section, m2m)
+                _apply_m2m(section, m2m)
 
         return instance
 
@@ -550,6 +648,10 @@ class ScreeningUpdateSerializer(serializers.ModelSerializer):
     Lightweight serializer for the Screen & Classify review workflow -- used
     by ``PATCH /api/v1/resources/{id}/screen/`` so reviewers can update just
     the screening columns without resubmitting the whole resource.
+
+    Always use this serializer with ``partial=True`` so a client that omits
+    ``risk_level`` doesn't clobber the value set at ingestion time via the
+    ``advisory_safety`` block.
     """
 
     class Meta:
@@ -589,6 +691,7 @@ class SectionReviewDecisionSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         decision = attrs.get("decision")
+
         if decision in (
             ReviewDecisionChoices.APPROVE_WITH_EDITS,
             ReviewDecisionChoices.REQUEST_REVISION,
@@ -601,6 +704,17 @@ class SectionReviewDecisionSerializer(serializers.Serializer):
                     )
                 }
             )
+
+        if decision == ReviewDecisionChoices.ESCALATE and not attrs.get("notes"):
+            raise serializers.ValidationError(
+                {
+                    "notes": (
+                        "Explain why this chunk is being escalated to a "
+                        "senior reviewer."
+                    )
+                }
+            )
+
         return attrs
 
 

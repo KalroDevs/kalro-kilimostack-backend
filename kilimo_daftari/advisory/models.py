@@ -164,6 +164,36 @@ class ChunkReviewStageChoices(models.TextChoices):
 
 
 # ===========================================================================
+# Slug helpers
+# ===========================================================================
+def _ensure_unique_slug(instance, base: str, slug_field: str = "slug",
+                        max_length: int = 520) -> str:
+    """
+    Return a slug that is unique across ``instance``'s model.
+
+    * ``base`` is slugified and truncated, preserving room for a numeric suffix.
+    * If the base already exists, append ``-2``, ``-3``, ... until free.
+    * Excludes ``instance.pk`` so re-saving an unchanged row keeps its slug.
+    * Falls back to the model's lowercase name if slugify yields "".
+    """
+    base = slugify(base) or instance.__class__.__name__.lower()
+    # Reserve room for the longest plausible suffix, e.g. "-12345".
+    head = base[: max_length - 8]
+
+    model = instance.__class__
+    queryset = model._default_manager.all()
+    if instance.pk:
+        queryset = queryset.exclude(pk=instance.pk)
+
+    candidate = head
+    n = 1
+    while queryset.filter(**{slug_field: candidate}).exists():
+        n += 1
+        candidate = f"{head}-{n}"[:max_length]
+    return candidate
+
+
+# ===========================================================================
 # Value chain lookup
 # ===========================================================================
 class ValueChain(models.Model):
@@ -189,7 +219,7 @@ class ValueChain(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.name)[:140]
+            self.slug = _ensure_unique_slug(self, self.name, max_length=140)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -220,7 +250,7 @@ class ThematicArea(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            self.slug = slugify(self.name)[:140]
+            self.slug = _ensure_unique_slug(self, self.name, max_length=140)
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -317,13 +347,7 @@ class AdvisoryResource(models.Model):
         blank=True,
         help_text="One or more value chains this resource applies to.",
     )
-    # Legacy / denormalized label kept for backwards compatibility and
-    # JSON round-tripping (JSON spec sends a single string).
-    value_chain = models.CharField(
-        max_length=120, blank=True, default="", db_index=True,
-        help_text="Legacy single value-chain label (from the JSON spec).",
-    )
-    commodity = models.JSONField(default=list, blank=True)
+
     production_system = models.JSONField(default=list, blank=True)
     advisory_domain = models.JSONField(default=list, blank=True)
     target_users = models.JSONField(default=list, blank=True)
@@ -427,7 +451,10 @@ class AdvisoryResource(models.Model):
     class Meta:
         ordering = ["-updated_at"]
         indexes = [
-            models.Index(fields=["sector", "value_chain"]),
+            # NOTE: value_chains is a ManyToManyField -- it lives in its own
+            # join table and cannot be part of a plain models.Index here.
+            # Django already creates indexes on the through-table FK columns.
+            models.Index(fields=["sector"]),
             models.Index(fields=["quality_flag"]),
             models.Index(fields=["advisory_status"]),
             models.Index(fields=["risk_level"]),
@@ -441,8 +468,9 @@ class AdvisoryResource(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.slug:
-            base = slugify(self.title)[:480] or "resource"
-            self.slug = f"{base}-{self.slug}"[:520]
+            self.slug = _ensure_unique_slug(
+                self, self.title or "", max_length=520
+            )
         super().save(*args, **kwargs)
 
     @property
@@ -877,3 +905,31 @@ class SectionReviewLog(models.Model):
 
     def __str__(self):
         return f"{self.section.content_id} · {self.decision} @ {self.created_at:%Y-%m-%d}"
+    
+
+
+
+class WorkbookUpload(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending"
+        PROCESSING = "processing"
+        PROCESSED = "processed"
+        FAILED = "failed"
+
+    file = models.FileField(upload_to="workbook/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.PENDING, db_index=True)
+
+    resources_created = models.PositiveIntegerField(default=0)
+    resources_updated = models.PositiveIntegerField(default=0)
+    sections_created = models.PositiveIntegerField(default=0)
+    sections_updated = models.PositiveIntegerField(default=0)
+    sections_skipped = models.PositiveIntegerField(default=0)
+
+    log = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+        def __str__(self):
+            return f"WorkbookUpload {self.id} ({self.status}) - {self.file.name}"

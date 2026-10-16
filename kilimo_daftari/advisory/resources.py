@@ -117,7 +117,6 @@ class AdvisoryResourceResource(resources.ModelResource):
     # -- JSON ----------------------------------------------------------
     author = fields.Field(attribute="author", widget=JSONWidget())
     available_languages = fields.Field(attribute="available_languages", widget=JSONWidget())
-    commodity = fields.Field(attribute="commodity", widget=JSONWidget())
     production_system = fields.Field(attribute="production_system", widget=JSONWidget())
     advisory_domain = fields.Field(attribute="advisory_domain", widget=JSONWidget())
     target_users = fields.Field(attribute="target_users", widget=JSONWidget())
@@ -147,8 +146,6 @@ class AdvisoryResourceResource(resources.ModelResource):
 
             "sector",
             "value_chains",
-            "value_chain",
-            "commodity",
             "production_system",
             "advisory_domain",
             "target_users",
@@ -225,7 +222,6 @@ class AdvisoryResourceResource(resources.ModelResource):
         for json_list_field in (
             "author",
             "available_languages",
-            "commodity",
             "production_system",
             "advisory_domain",
             "target_users",

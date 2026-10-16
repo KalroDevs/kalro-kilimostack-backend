@@ -572,3 +572,31 @@ def reset_sync_state(resource: AdvisoryResource) -> None:
             "updated_at",
         ]
     )
+
+
+
+
+def sync_many(resources) -> dict:
+    """
+    Bulk entry point used by the admin action.
+
+    Returns a dict of counts. Only ``resource.is_ready_for_ai_layer`` rows
+    are attempted; everything else is counted as ``skipped``.
+    """
+    results = {"synced": 0, "skipped": 0, "failed": 0}
+
+    if not settings.AI_LAYER_SYNC_ENABLED:
+        # Feature flag off: report everything as skipped rather than failed,
+        # otherwise the admin message is misleading.
+        for _ in resources:
+            results["skipped"] += 1
+        return results
+
+    for resource in resources:
+        if not resource.is_ready_for_ai_layer:
+            results["skipped"] += 1
+            continue
+        ok = sync_resource_to_ai_layer(resource)
+        results["synced" if ok else "failed"] += 1
+
+    return results

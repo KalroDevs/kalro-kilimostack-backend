@@ -44,6 +44,7 @@ from .models import (
     ThematicArea,
     ValueChain,
     VectorSyncStatusChoices,
+    WorkbookUpload,
 )
 from .resources import (
     AdvisoryResourceResource,
@@ -53,7 +54,7 @@ from .resources import (
     ValueChainResource,
 )
 
-
+from .services import sync_many
 # ===========================================================================
 # Display helpers
 # ===========================================================================
@@ -305,7 +306,6 @@ class AdvisoryResourceAdmin(ImportExportModelAdmin):
         "slug",
         "author",
         "institution__name",
-        "value_chain",
         "value_chains__name",
         "preferred_citation",
         "screening_notes",
@@ -373,8 +373,6 @@ class AdvisoryResourceAdmin(ImportExportModelAdmin):
             "fields": (
                 "sector",
                 "value_chains",
-                "value_chain",
-                "commodity",
                 "production_system",
                 "advisory_domain",
                 "target_users",
@@ -849,6 +847,59 @@ class SectionReviewLogAdmin(ExportActionModelAdmin):
         url = reverse("admin:advisory_contentsection_change", args=[obj.section_id])
         return format_html('<a href="{}">{}</a>', url, obj.section.content_id)
 
+
+
+
+@admin.register(WorkbookUpload)
+class WorkbookUploadAdmin(admin.ModelAdmin):
+    list_display = (
+        "id", "file_link", "status", "uploaded_at",
+        "resources_created", "resources_updated",
+        "sections_created", "sections_updated", "sections_skipped",
+    )
+    list_filter = ("status", "uploaded_at")
+    readonly_fields = (
+        "status", "uploaded_at",
+        "resources_created", "resources_updated",
+        "sections_created", "sections_updated", "sections_skipped",
+        "log", "summary_html",
+    )
+    fieldsets = (
+        ("Upload", {
+            "fields": ("file",),
+            "description": (
+                "Upload the Screen & Classify workbook (.xlsx). "
+            ),
+        }),
+        ("Result", {
+            "fields": ("status", "uploaded_at", "summary_html",
+                       "resources_created", "resources_updated",
+                       "sections_created", "sections_updated",
+                       "sections_skipped", "log"),
+        }),
+    )
+
+    def file_link(self, obj):
+        if not obj.file:
+            return "—"
+        return format_html('<a href="{}" target="_blank">{}</a>',
+                           obj.file.url, obj.file.name)
+    file_link.short_description = "file"
+
+    def summary_html(self, obj):
+        return format_html(
+            "<b>{} created</b>, {} updated (resources) &nbsp;|&nbsp; "
+            "<b>{} created</b>, {} updated, {} skipped (sections)",
+            obj.resources_created, obj.resources_updated,
+            obj.sections_created, obj.sections_updated, obj.sections_skipped,
+        )
+    summary_html.short_description = "Summary"
+
+    def has_change_permission(self, request, obj=None):
+        # Upload rows are read-only after creation; you can delete + re-upload.
+        if obj is not None:
+            return False
+        return super().has_change_permission(request, obj)
 
 # ===========================================================================
 # Admin site branding
