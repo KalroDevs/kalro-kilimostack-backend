@@ -48,6 +48,7 @@ INSTALLED_APPS = [
     "beckn_provider",
     "providers",
     "accounts",
+    "documents",
 ]
 
 X_FRAME_OPTIONS = "SAMEORIGIN"
@@ -168,9 +169,17 @@ AI_LAYER_INGEST_PATH = "/api/v1/ingest"
 AI_LAYER_SYNC_TIMEOUT_SECONDS = float(os.environ.get("AI_LAYER_SYNC_TIMEOUT_SECONDS", "5"))
 AI_LAYER_SYNC_ENABLED = os.environ.get("AI_LAYER_SYNC_ENABLED", "true").lower() == "true"
 
+#new
+AI_LAYER_DOCUMENT_INGEST_PATH = "/api/v1/documents/ingest"
+AI_LAYER_DOCUMENT_TIMEOUT_SECONDS = float(
+    os.environ.get("AI_LAYER_DOCUMENT_TIMEOUT_SECONDS", "120")
+)
+AI_LAYER_CHAT_TIMEOUT_SECONDS = float(os.environ.get("AI_LAYER_CHAT_TIMEOUT_SECONDS", "130"))
+AI_LAYER_INGEST_API_KEY = os.environ.get("AI_LAYER_INGEST_API_KEY", "")
+
 # Institution identity used when this instance registers itself as a
 # provider on the KilimoSTACK / Beckn network.
 PROVIDER_INSTITUTION_NAME = os.environ.get(
     "PROVIDER_INSTITUTION_NAME", "Kenya Agricultural and Livestock Research Organization"
 )
-PROVIDER_ID = os.environ.get("PROVIDER_ID", "kalro.kilimostack")
+PROVIDER_ID = os.environ.get("PROVIDER_ID", "kalro")

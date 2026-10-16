@@ -1,20 +1,112 @@
+"""
+DRF views for the KALRO Advisory Content Corpus.
+
+Endpoints
+---------
+Ingestion (spec-exact)
+  POST   /api/v1/ingest/
+
+AdvisoryResource
+  GET    /api/v1/resources/                             -> list (filters + search)
+  POST   /api/v1/resources/                             -> create
+  GET    /api/v1/resources/<publication_id>/            -> retrieve
+  PUT    /api/v1/resources/<publication_id>/            -> replace
+  PATCH  /api/v1/resources/<publication_id>/            -> partial update
+  DELETE /api/v1/resources/<publication_id>/            -> soft delete
+  PATCH  /api/v1/resources/<publication_id>/screen/     -> Screen & Classify
+  POST   /api/v1/resources/<publication_id>/sync-to-ai-layer/
+  POST   /api/v1/resources/<publication_id>/reset-sync/
+  POST   /api/v1/resources/sync-ready/
+  POST   /api/v1/resources/sync-stale/
+  POST   /api/v1/resources/<publication_id>/certify/
+
+ContentSection
+  GET    /api/v1/sections/
+  GET    /api/v1/sections/<content_id>/
+  PATCH  /api/v1/sections/<content_id>/
+  POST   /api/v1/sections/<content_id>/review/
+  POST   /api/v1/sections/<content_id>/assign/
+  POST   /api/v1/sections/<content_id>/quarantine/
+  GET    /api/v1/sections/<content_id>/review-logs/
+  GET    /api/v1/sections/stats/
+
+Lookups & audit
+  /api/v1/value-chains/, /api/v1/thematic-areas/, /api/v1/review-logs/
+"""
+
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
+
 from django_filters.rest_framework import DjangoFilterBackend
-from rest_framework import filters, status, viewsets
+from rest_framework import filters, mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
-from .models import AdvisoryResource
-from .serializers import AdvisoryResourceSerializer, ScreeningUpdateSerializer
-from .services import sync_many, sync_resource_to_ai_layer
+from .models import (
+    AdvisoryResource,
+    AdvisoryStatusChoices,
+    ContentSection,
+    QualityFlagChoices,
+    SectionReviewLog,
+    ThematicArea,
+    ValueChain,
+)
+from .serializers import (
+    AdvisoryResourceListSerializer,
+    AdvisoryResourceSerializer,
+    ContentSectionListSerializer,
+    ContentSectionSerializer,
+    ScreeningUpdateSerializer,
+    SectionReviewDecisionSerializer,
+    SectionReviewLogSerializer,
+    ThematicAreaSerializer,
+    ValueChainSerializer,
+)
+from .services import (
+    reset_sync_state,
+    sync_batch,
+    sync_resource_to_ai_layer,
+    sync_stale,
+)
 
 
+User = get_user_model()
+
+
+# ===========================================================================
+# Permissions
+# ===========================================================================
+class IsReviewerOrReadOnly(IsAuthenticated):
+    """
+    Read = any authenticated user. Write = staff or a member of the
+    ``KALRO Scientist`` group.
+    """
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        if request.method in ("GET", "HEAD", "OPTIONS"):
+            return True
+        if request.user.is_staff:
+            return True
+        return request.user.groups.filter(name="KALRO Scientist").exists()
+
+
+# ===========================================================================
+# AdvisoryResource
+# ===========================================================================
 class AdvisoryResourceViewSet(viewsets.ModelViewSet):
     """
     CRUD + workflow actions for the KALRO advisory content corpus.
 
-    Filtering supports the same "sort by crop, topic and content type" the
-    Screen & Classify workbook was built for, e.g.:
+    Filtering supports the "sort by crop, topic and content type" workflow
+    from the Screen & Classify workbook:
 
         GET /api/v1/resources/?sector=livestock&value_chain=camel
         GET /api/v1/resources/?quality_flag=needs_review
@@ -22,61 +114,390 @@ class AdvisoryResourceViewSet(viewsets.ModelViewSet):
         GET /api/v1/resources/?search=calf
     """
 
-    queryset = AdvisoryResource.objects.all().prefetch_related("content_sections")
+    queryset = (
+        AdvisoryResource.objects.select_related("institution")
+        .prefetch_related("value_chains", "content_sections")
+    )
     serializer_class = AdvisoryResourceSerializer
+    permission_classes = [IsReviewerOrReadOnly]
+    lookup_field = "publication_id"
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = [
         "sector",
         "value_chain",
         "content_type",
+        "language",
         "validation_status",
+        "advisory_status",
         "currency_status",
         "scientific_accuracy_check",
         "risk_level",
         "quality_flag",
         "vector_sync_status",
+        "is_deleted",
     ]
-    search_fields = ["title", "publication_id", "value_chain", "advisory_domain", "commodity"]
-    ordering_fields = ["updated_at", "publish_date", "title"]
+    search_fields = [
+        "title",
+        "slug",
+        "publication_id",
+        "value_chain",
+        "value_chains__name",
+        "advisory_domain",
+        "commodity",
+        "author",
+        "institution__name",
+    ]
+    ordering_fields = ["updated_at", "publish_date", "title", "publication_id"]
+    ordering = ["-updated_at"]
 
-    @action(detail=True, methods=["patch"], url_path="screen")
-    def screen(self, request, pk=None):
-        """Screen & Classify workflow: update just the review columns."""
+    def get_serializer_class(self):
+        if self.action == "list":
+            return AdvisoryResourceListSerializer
+        return AdvisoryResourceSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # Hide soft-deleted rows unless explicitly requested.
+        if self.request.query_params.get("include_deleted") != "true":
+            qs = qs.filter(is_deleted=False)
+        return qs
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        instance.soft_delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # -- Screen & Classify -------------------------------------------------
+    @action(detail=True, methods=["patch"], url_path="screen",
+            permission_classes=[IsReviewerOrReadOnly])
+    def screen(self, request, publication_id=None):
+        """Update just the screening/classification columns."""
         resource = self.get_object()
         serializer = ScreeningUpdateSerializer(resource, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save(screened_by=request.user if request.user.is_authenticated else None,
-                         screened_at=timezone.now())
-        # If screening just certified the item, best-effort sync to the AI Layer.
-        if resource.quality_flag == "ready_to_certify":
+        serializer.save(
+            screened_by=request.user if request.user.is_authenticated else None,
+            screened_at=timezone.now(),
+        )
+        # If screening just certified the item, best-effort sync.
+        if resource.quality_flag == QualityFlagChoices.READY_TO_CERTIFY:
             sync_resource_to_ai_layer(resource)
-        return Response(AdvisoryResourceSerializer(resource).data)
+        return Response(
+            AdvisoryResourceSerializer(resource, context={"request": request}).data
+        )
 
-    @action(detail=True, methods=["post"], url_path="sync-to-ai-layer")
-    def sync_to_ai_layer(self, request, pk=None):
-        """Manually (re)push this resource to the AI Layer's vector index."""
+    # -- Certification -----------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="certify",
+            permission_classes=[IsReviewerOrReadOnly])
+    def certify(self, request, publication_id=None):
+        """
+        Body: {"status": "validated" | "validated_minor_edits" |
+                       "major_revision" | "not_validated"}
+        Sets advisory_status + quality_flag together and stamps the auditor.
+        """
         resource = self.get_object()
-        ok = sync_resource_to_ai_layer(resource)
-        code = status.HTTP_200_OK if ok else status.HTTP_409_CONFLICT
+        target = request.data.get("status")
+        allowed = {choice for choice, _ in AdvisoryStatusChoices.choices}
+        if target not in allowed:
+            raise ValidationError({"status": f"Must be one of {sorted(allowed)}"})
+
+        resource.advisory_status = target
+        if target in (
+            AdvisoryStatusChoices.VALIDATED,
+            AdvisoryStatusChoices.VALIDATED_WITH_MINOR_EDITS,
+        ):
+            resource.quality_flag = QualityFlagChoices.READY_TO_CERTIFY
+            resource.certified_by = request.user
+            resource.certified_at = timezone.now()
+        elif target == AdvisoryStatusChoices.MAJOR_REVISION:
+            resource.quality_flag = QualityFlagChoices.NEEDS_UPDATE
+        else:
+            resource.quality_flag = QualityFlagChoices.REJECT
+        resource.save()
+        return Response(
+            AdvisoryResourceSerializer(resource, context={"request": request}).data
+        )
+
+    # -- AI Layer sync -----------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="sync-to-ai-layer",
+            permission_classes=[IsAuthenticated])
+    def sync_to_ai_layer(self, request, publication_id=None):
+        """Manually (re)push this resource. ?force=true bypasses the hash check."""
+        resource = self.get_object()
+        force = request.query_params.get("force", "false").lower() == "true"
+        result = sync_resource_to_ai_layer(resource, force=force)
+
+        code = (
+            status.HTTP_200_OK
+            if result.ok
+            else status.HTTP_409_CONFLICT
+            if result.status == "skipped"
+            else status.HTTP_502_BAD_GATEWAY
+        )
         return Response(
             {
                 "publication_id": resource.publication_id,
+                "status": result.status,
+                "reason": result.reason,
+                "chunks_sent": result.chunks_sent,
+                "chunks_skipped": result.chunks_skipped,
+                "attempts": result.attempts,
                 "vector_sync_status": resource.vector_sync_status,
+                "vector_synced_at": resource.vector_synced_at,
                 "vector_sync_error": resource.vector_sync_error,
             },
             status=code,
         )
 
-    @action(detail=False, methods=["post"], url_path="sync-ready")
-    def sync_ready(self, request):
-        """Bulk-sync every 'ready_to_certify' resource that isn't already synced."""
-        pending = self.get_queryset().filter(quality_flag="ready_to_certify").exclude(
-            vector_sync_status="synced"
+    @action(detail=True, methods=["post"], url_path="reset-sync",
+            permission_classes=[IsAuthenticated])
+    def reset_sync(self, request, publication_id=None):
+        resource = self.get_object()
+        reset_sync_state(resource)
+        return Response(
+            {"publication_id": resource.publication_id, "status": "not_synced"}
         )
-        results = sync_many(pending)
-        return Response(results)
+
+    @action(detail=False, methods=["post"], url_path="sync-ready",
+            permission_classes=[IsAuthenticated])
+    def sync_ready(self, request):
+        """Bulk-sync every certified resource that isn't already synced."""
+        pending = (
+            self.get_queryset()
+            .filter(
+                quality_flag=QualityFlagChoices.READY_TO_CERTIFY,
+                advisory_status__in=[
+                    AdvisoryStatusChoices.VALIDATED,
+                    AdvisoryStatusChoices.VALIDATED_WITH_MINOR_EDITS,
+                ],
+            )
+            .exclude(vector_sync_status="synced")
+        )
+        batch = sync_batch(pending)
+        return Response(
+            {"summary": batch.summary(), "results": [r.__dict__ for r in batch.results]}
+        )
+
+    @action(detail=False, methods=["post"], url_path="sync-stale",
+            permission_classes=[IsAuthenticated])
+    def sync_stale_action(self, request):
+        """Self-healing: re-sync certified resources whose content drifted."""
+        batch = sync_stale()
+        return Response(
+            {"summary": batch.summary(), "results": [r.__dict__ for r in batch.results]}
+        )
 
 
+# ===========================================================================
+# ContentSection
+# ===========================================================================
+class ContentSectionViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    List / retrieve / update content sections.
+
+    Sections are created and removed through the parent resource (nested
+    inside ``AdvisoryResourceSerializer.content``), so this viewset has no
+    create/destroy. The review workflow is exposed at ``.../review/`` so
+    status, stage, quarantine, and the audit log always move together.
+    """
+
+    queryset = (
+        ContentSection.objects.select_related(
+            "resource", "assigned_scientist", "reviewed_by", "senior_reviewer"
+        ).prefetch_related("value_chains", "thematic_areas")
+    )
+    serializer_class = ContentSectionSerializer
+    permission_classes = [IsReviewerOrReadOnly]
+    lookup_field = "content_id"
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = [
+        "status",
+        "review_stage",
+        "review_decision",
+        "governance_flag",
+        "is_quarantined",
+        "requires_senior_review",
+        "resource__sector",
+    ]
+    search_fields = [
+        "content_id",
+        "content_header",
+        "content_text",
+        "resource__publication_id",
+        "resource__title",
+        "review_notes",
+        "governance_notes",
+    ]
+    ordering_fields = ["updated_at", "reading_order", "confidence_score"]
+    ordering = ["resource", "reading_order"]
+
+    def get_serializer_class(self):
+        if self.action == "list":
+            return ContentSectionListSerializer
+        if self.action == "review":
+            return SectionReviewDecisionSerializer
+        return ContentSectionSerializer
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        p = self.request.query_params
+
+        if v := p.get("value_chain"):
+            qs = qs.filter(value_chains__slug=v)
+        if v := p.get("thematic_area"):
+            qs = qs.filter(thematic_areas__slug=v)
+        if v := p.get("assigned_scientist"):
+            qs = qs.filter(assigned_scientist__email=v)
+        if p.get("unassigned") == "true":
+            qs = qs.filter(assigned_scientist__isnull=True)
+        if p.get("embedding_ready") == "true":
+            qs = qs.filter(
+                status__in=["validated", "validated_minor_edits"],
+                governance_flag="",
+                is_quarantined=False,
+            )
+        return qs.distinct()
+
+    # -- Scientist review --------------------------------------------------
+    @action(detail=True, methods=["post"], url_path="review",
+            permission_classes=[IsReviewerOrReadOnly])
+    def review(self, request, content_id=None):
+        """
+        Record a scientist decision.
+
+        Body:
+            {
+                "decision": "approve" | "approve_with_edits" |
+                            "request_revision" | "reject" | "escalate",
+                "notes": "...",
+                "suggested_edits": "...",
+                "confidence": 0-100
+            }
+
+        Delegates to ``ContentSection.apply_review`` so status, stage,
+        quarantine, and the audit log are always updated atomically.
+        """
+        section = self.get_object()
+        serializer = SectionReviewDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        try:
+            section.apply_review(
+                scientist=request.user,
+                **serializer.validated_data,
+            )
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
+
+        return Response(
+            ContentSectionSerializer(section, context={"request": request}).data
+        )
+
+    @action(detail=True, methods=["get"], url_path="review-logs",
+            permission_classes=[IsAuthenticated])
+    def review_logs(self, request, content_id=None):
+        section = self.get_object()
+        logs = section.review_logs.select_related("actor").all()
+        return Response(SectionReviewLogSerializer(logs, many=True).data)
+
+    @action(detail=True, methods=["post"], url_path="assign",
+            permission_classes=[IsReviewerOrReadOnly])
+    def assign(self, request, content_id=None):
+        """Body: {"email": "scientist@kalro.org"} — omit or null to unassign."""
+        section = self.get_object()
+        email = request.data.get("email")
+        if email is None:
+            section.assigned_scientist = None
+        else:
+            try:
+                section.assigned_scientist = User.objects.get(email=email)
+            except User.DoesNotExist:
+                raise ValidationError({"email": "No user with that email."})
+        if section.review_stage == "ingested":
+            section.review_stage = "scientist_review"
+        section.save(update_fields=["assigned_scientist", "review_stage", "updated_at"])
+        return Response(
+            ContentSectionSerializer(section, context={"request": request}).data
+        )
+
+    @action(detail=True, methods=["post"], url_path="quarantine",
+            permission_classes=[IsReviewerOrReadOnly])
+    def quarantine(self, request, content_id=None):
+        """Body: {"quarantined": true|false}. Default true."""
+        section = self.get_object()
+        value = bool(request.data.get("quarantined", True))
+        section.is_quarantined = value
+        section.save(update_fields=["is_quarantined", "updated_at"])
+        return Response(
+            {"content_id": section.content_id, "is_quarantined": section.is_quarantined}
+        )
+
+    @action(detail=False, methods=["get"], url_path="stats",
+            permission_classes=[IsAuthenticated])
+    def stats(self, request):
+        """Aggregate counts by status, stage, and governance flag."""
+        base = self.get_queryset()
+        return Response(
+            {
+                "total": base.count(),
+                "by_status": dict(base.values_list("status").annotate(n=Count("id"))),
+                "by_stage": dict(base.values_list("review_stage").annotate(n=Count("id"))),
+                "by_governance_flag": dict(
+                    base.values_list("governance_flag").annotate(n=Count("id"))
+                ),
+                "quarantined": base.filter(is_quarantined=True).count(),
+                "awaiting_scientist_review": base.filter(
+                    review_stage="scientist_review"
+                ).count(),
+            }
+        )
+
+
+# ===========================================================================
+# Lookup tables
+# ===========================================================================
+class ValueChainViewSet(viewsets.ModelViewSet):
+    queryset = ValueChain.objects.all()
+    serializer_class = ValueChainSerializer
+    permission_classes = [IsReviewerOrReadOnly]
+    lookup_field = "slug"
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["sector", "is_active"]
+    search_fields = ["name", "slug", "description"]
+
+
+class ThematicAreaViewSet(viewsets.ModelViewSet):
+    queryset = ThematicArea.objects.all()
+    serializer_class = ThematicAreaSerializer
+    permission_classes = [IsReviewerOrReadOnly]
+    lookup_field = "slug"
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter]
+    filterset_fields = ["is_active"]
+    search_fields = ["name", "slug", "description"]
+
+
+# ===========================================================================
+# Audit trail (read-only)
+# ===========================================================================
+class SectionReviewLogViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = SectionReviewLog.objects.select_related("section", "actor")
+    serializer_class = SectionReviewLogSerializer
+    permission_classes = [IsAuthenticated]
+    filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
+    filterset_fields = ["decision", "new_status", "governance_flag"]
+    search_fields = ["section__content_id", "notes", "actor__email"]
+    ordering_fields = ["created_at", "confidence_score"]
+    ordering = ["-created_at"]
+
+
+# ===========================================================================
+# Spec ingestion
+# ===========================================================================
 class IngestView(viewsets.ViewSet):
     """
     POST /api/v1/ingest/
@@ -86,7 +507,12 @@ class IngestView(viewsets.ViewSet):
     upserts each resource by ``publication_id``. This is the endpoint
     KALRO's content pipeline (or the ``import_advisory_json`` management
     command) submits to.
+
+    Body may be a single object or an array. Per-row results are returned
+    with a stable shape so callers can retry just the failures.
     """
+
+    permission_classes = [IsAuthenticated]
 
     def create(self, request):
         payload = request.data
@@ -100,16 +526,61 @@ class IngestView(viewsets.ViewSet):
 
         created, updated, errors = [], [], []
         for item in payload:
-            publication_id = item.get("publication_id")
-            instance = AdvisoryResource.objects.filter(publication_id=publication_id).first()
-            serializer = AdvisoryResourceSerializer(instance, data=item, partial=instance is not None)
+            publication_id = (item or {}).get("publication_id")
+            if not publication_id:
+                errors.append(
+                    {
+                        "publication_id": None,
+                        "errors": {"publication_id": ["This field is required."]},
+                    }
+                )
+                continue
+
+            instance = AdvisoryResource.objects.filter(
+                publication_id=publication_id
+            ).first()
+            serializer = AdvisoryResourceSerializer(
+                instance,
+                data=item,
+                partial=instance is not None,
+                context={"request": request},
+            )
             if serializer.is_valid():
-                obj = serializer.save()
+                try:
+                    with transaction.atomic():
+                        obj = serializer.save()
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(
+                        {
+                            "publication_id": publication_id,
+                            "errors": {"non_field_errors": [str(exc)]},
+                        }
+                    )
+                    continue
                 (updated if instance else created).append(obj.publication_id)
             else:
-                errors.append({"publication_id": publication_id, "errors": serializer.errors})
+                errors.append(
+                    {"publication_id": publication_id, "errors": serializer.errors}
+                )
 
+        http_status = (
+            status.HTTP_201_CREATED
+            if created and not errors
+            else status.HTTP_200_OK
+            if not errors
+            else status.HTTP_207_MULTI_STATUS
+        )
         return Response(
             {"created": created, "updated": updated, "errors": errors},
-            status=status.HTTP_207_MULTI_STATUS if errors else status.HTTP_201_CREATED,
+            status=http_status,
         )
+
+
+# ===========================================================================
+# Health check
+# ===========================================================================
+class HealthView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response({"status": "ok", "time": timezone.now()})
