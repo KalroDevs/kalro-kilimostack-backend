@@ -9,12 +9,27 @@ from .models import AdvisoryResource, ContentSection
 User = get_user_model()
 
 
+# ---------------------------------------------------------------------------
+# Shared widget construction
+# ---------------------------------------------------------------------------
+def _json_field(name: str) -> fields.Field:
+    """Helper: a JSONField backed by JSONWidget, keyed on ``name``."""
+    return fields.Field(
+        column_name=name,
+        attribute=name,
+        widget=JSONWidget(),
+    )
+
+
 class AdvisoryResourceResource(resources.ModelResource):
     """
     Import/export resource for AdvisoryResource.
 
     Stable identifier:
-        publication_id
+        resource_id   (Excel column A -- the inventory / join key)
+
+    Note: ``publication_id`` is Excel column C, is NOT unique, and may be
+    blank. It is retained as an ordinary column, not as the import key.
 
     User reference:
         screened_by -> User.email
@@ -25,90 +40,36 @@ class AdvisoryResourceResource(resources.ModelResource):
     screened_by = fields.Field(
         column_name="screened_by",
         attribute="screened_by",
-        widget=ForeignKeyWidget(
-            User,
-            field="email",
-        ),
+        widget=ForeignKeyWidget(User, field="email"),
     )
 
-    author = fields.Field(
-        column_name="author",
-        attribute="author",
-        widget=JSONWidget(),
-    )
-
-    available_languages = fields.Field(
-        column_name="available_languages",
-        attribute="available_languages",
-        widget=JSONWidget(),
-    )
-
-    commodity = fields.Field(
-        column_name="commodity",
-        attribute="commodity",
-        widget=JSONWidget(),
-    )
-
-    production_system = fields.Field(
-        column_name="production_system",
-        attribute="production_system",
-        widget=JSONWidget(),
-    )
-
-    advisory_domain = fields.Field(
-        column_name="advisory_domain",
-        attribute="advisory_domain",
-        widget=JSONWidget(),
-    )
-
-    target_users = fields.Field(
-        column_name="target_users",
-        attribute="target_users",
-        widget=JSONWidget(),
-    )
-
-    geographic_applicability = fields.Field(
-        column_name="geographic_applicability",
-        attribute="geographic_applicability",
-        widget=JSONWidget(),
-    )
-
-    seasonality = fields.Field(
-        column_name="seasonality",
-        attribute="seasonality",
-        widget=JSONWidget(),
-    )
-
-    license = fields.Field(
-        column_name="license",
-        attribute="license",
-        widget=JSONWidget(),
-    )
-
-    validated_by = fields.Field(
-        column_name="validated_by",
-        attribute="validated_by",
-        widget=JSONWidget(),
-    )
-
-    risk_domains = fields.Field(
-        column_name="risk_domains",
-        attribute="risk_domains",
-        widget=JSONWidget(),
-    )
+    # JSON fields
+    author = _json_field("author")
+    available_languages = _json_field("available_languages")
+    commodity = _json_field("commodity")
+    production_system = _json_field("production_system")
+    advisory_domain = _json_field("advisory_domain")
+    target_users = _json_field("target_users")
+    geographic_applicability = _json_field("geographic_applicability")
+    seasonality = _json_field("seasonality")
+    license = _json_field("license")
+    validated_by = _json_field("validated_by")
+    risk_domains = _json_field("risk_domains")
 
     class Meta:
         model = AdvisoryResource
 
-        import_id_fields = (
-            "publication_id",
-        )
+        # Excel column A -- unique, stable, referenced by ContentSection.pages_reference
+        import_id_fields = ("resource_id",)
 
         fields = (
+            # Excel column A -- join key
+            "resource_id",
+            # Excel column C -- free-form publication identifier / URL
             "publication_id",
             "title",
             "link",
-            "thumbnail",
+            # "thumbnail",   # commented out on the model; not importable
             "institution",
             "author",
             "publish_date",
@@ -156,7 +117,6 @@ class AdvisoryResourceResource(resources.ModelResource):
 
         skip_unchanged = True
         report_skipped = True
-
         use_bulk = False
 
 
@@ -167,8 +127,9 @@ class ContentSectionResource(resources.ModelResource):
     Stable identifier:
         content_id
 
-    AdvisoryResource is referenced using publication_id
-    rather than its database primary key.
+    AdvisoryResource is referenced using ``resource_id`` -- the Excel
+    column A value the section sheets carry in their "Pages" column
+    (e.g. "CROP-007") -- NOT by publication_id.
     """
 
     resource = fields.Field(
@@ -176,40 +137,31 @@ class ContentSectionResource(resources.ModelResource):
         attribute="resource",
         widget=ForeignKeyWidget(
             AdvisoryResource,
-            field="publication_id",
+            field="resource_id",       # ✅ matches Excel "Pages"
         ),
     )
 
-    content_images = fields.Field(
-        column_name="content_images",
-        attribute="content_images",
-        widget=JSONWidget(),
-    )
+    # JSON fields
+    content_images = _json_field("content_images")
+    content_tables = _json_field("content_tables")
+    content_warnings = _json_field("content_warnings")
+    content_tags = _json_field("content_tags")
 
-    content_tables = fields.Field(
-        column_name="content_tables",
-        attribute="content_tables",
-        widget=JSONWidget(),
+    # Plain strings -- prevent Excel from coercing e.g. "CROP-007" or a raw
+    # Pages value into a number/date during round-trips.
+    pages_reference = fields.Field(
+        column_name="pages_reference",
+        attribute="pages_reference",
     )
-
-    content_warnings = fields.Field(
-        column_name="content_warnings",
-        attribute="content_warnings",
-        widget=JSONWidget(),
-    )
-
-    content_tags = fields.Field(
-        column_name="content_tags",
-        attribute="content_tags",
-        widget=JSONWidget(),
+    value_chain = fields.Field(
+        column_name="value_chain",
+        attribute="value_chain",
     )
 
     class Meta:
         model = ContentSection
 
-        import_id_fields = (
-            "content_id",
-        )
+        import_id_fields = ("content_id",)
 
         fields = (
             "content_id",
@@ -219,6 +171,10 @@ class ContentSectionResource(resources.ModelResource):
             "content_text",
             "page_start",
             "page_end",
+            # Excel cross-reference (Sheet 3-7)
+            "pages_reference",
+            "value_chain",
+            # Structured payloads
             "content_images",
             "content_tables",
             "content_warnings",
@@ -229,5 +185,4 @@ class ContentSectionResource(resources.ModelResource):
 
         skip_unchanged = True
         report_skipped = True
-
         use_bulk = False

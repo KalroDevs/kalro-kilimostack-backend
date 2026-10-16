@@ -5,3 +5,7 @@ class AdvisoryConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "advisory"
     verbose_name = "KALRO Advisory Content Corpus"
+
+    def ready(self):
+        # Import signals to ensure they are registered
+        import advisory.signals  # noqa: F401

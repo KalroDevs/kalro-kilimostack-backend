@@ -1,25 +1,3 @@
-"""
-Data model for the KALRO Advisory Content Corpus.
-
-Two sources define this schema:
-
-1. ``Advisory Content Import JSON Specification v0.1`` (JSON_Data_Specification.docx)
-   -- the wire format KALRO / partners use to submit resources for ingestion
-   into the Kenya AI Advisory Platform. Every top-level field in that spec has
-   a matching column or JSON field below (see the field-by-field mapping in
-   the project README).
-
-2. The "Screen & Classify" working template (Excel workbook produced earlier
-   in this workshop's tooling) -- the human screening workflow that checks
-   scientific accuracy & currency and sorts content by crop/topic/content
-   type before it is certified. Those columns are reproduced here as
-   first-class fields (``currency_status``, ``scientific_accuracy_check``,
-   ``validation_status``, ``risk_level``, ``quality_flag``,
-   ``screening_notes``, ...) so the same review workflow that ran in
-   spreadsheets can run against this database and drive what gets synced to
-   the AI Layer's vector index.
-"""
-
 from django.conf import settings
 from django.db import models
 
@@ -95,19 +73,25 @@ class AdvisoryResource(models.Model):
     with ``quality_flag = ready_to_certify`` are synced to the AI Layer.
     """
 
-    # -- Core resource fields (JSON spec section 1) -------------------------
+    resource_id = models.CharField(max_length=50, unique=True, db_index=True,)   
+    
+    group = models.CharField(max_length=30, blank=True, default="", db_index=True,)
+    
+   
     title = models.CharField(max_length=500)
     link = models.URLField(max_length=1000, null=True, blank=True, default="")
     upload_file = models.FileField(upload_to="advisory_uploads/", blank=True, null=True)
-    publication_id = models.CharField(max_length=200, unique=True)
+
+   
+    publication_id = models.CharField( max_length=1000, blank=True, default="", db_index=True,)
+        
+
     # thumbnail = models.URLField(max_length=1000, blank=True, default="")
-    institution = models.CharField(
-        max_length=300, default="Kenya Agricultural and Livestock Research Organization"
-    )
+    institution = models.CharField(max_length=300, default="Kenya Agricultural and Livestock Research Organization")
+    
     author = models.JSONField(default=list, blank=True, help_text="List of author name strings")
-    publish_date = models.CharField(
-        max_length=20, blank=True, default="", help_text="Raw value as submitted, e.g. 2018/01/08"
-    )
+    publish_date = models.CharField(max_length=20, blank=True, default="", help_text="Raw value as submitted, e.g. 2018/01/08")
+    
     modified_date = models.DateTimeField(null=True, blank=True)
     content_type = models.CharField(max_length=40, choices=ContentTypeChoices.choices)
     language = models.CharField(max_length=10, default="en")
@@ -120,54 +104,43 @@ class AdvisoryResource(models.Model):
     advisory_domain = models.JSONField(default=list, blank=True)
     target_users = models.JSONField(default=list, blank=True)
 
-    # Nested objects kept as JSON for spec-exact round-tripping.
-    geographic_applicability = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text='{"country": "Kenya", "counties": [...], "agro_ecological_zones": [...], "notes": ""}',
-    )
-    seasonality = models.JSONField(
-        default=dict,
-        blank=True,
-        help_text='{"season": [...], "production_stage": [...], "timing_notes": ""}',
-    )
+   
+    geographic_applicability = models.JSONField(default=dict, blank=True,)
+      
+    
+    seasonality = models.JSONField(default=dict, blank=True,)
+    
     license = models.JSONField(default=dict, blank=True)
 
-    validation_status = models.CharField(
-        max_length=30, choices=ValidationStatusChoices.choices, blank=True, default=""
-    )
+    validation_status = models.CharField(max_length=30, choices=ValidationStatusChoices.choices, blank=True, default="")
+    
     validated_by = models.JSONField(default=list, blank=True)
     review_date = models.DateField(null=True, blank=True)
     next_review_date = models.DateField(null=True, blank=True)
     preferred_citation = models.TextField(blank=True, default="")
 
-    # advisory_safety (JSON spec) -- kept flat for easy filtering/admin display.
+
     risk_level = models.CharField(max_length=10, choices=RiskLevelChoices.choices, blank=True, default="")
     risk_domains = models.JSONField(default=list, blank=True)
     requires_human_review = models.BooleanField(default=False)
     escalation_guidance = models.TextField(blank=True, default="")
     safety_disclaimer = models.TextField(blank=True, default="")
 
-    # -- Screen & Classify fields (from the Excel working template) --------
-    currency_status = models.CharField(
-        max_length=25, choices=CurrencyStatusChoices.choices, blank=True, default=""
-    )
-    scientific_accuracy_check = models.CharField(
-        max_length=25, choices=AccuracyCheckChoices.choices, blank=True, default=""
-    )
-    quality_flag = models.CharField(
-        max_length=25, choices=QualityFlagChoices.choices, blank=True, default=""
-    )
+
+    currency_status = models.CharField(max_length=25, choices=CurrencyStatusChoices.choices, blank=True, default="")
+    
+    scientific_accuracy_check = models.CharField(max_length=25, choices=AccuracyCheckChoices.choices, blank=True, default="")
+    
+    quality_flag = models.CharField(max_length=25, choices=QualityFlagChoices.choices, blank=True, default="")
+    
     screening_notes = models.TextField(blank=True, default="")
     screened_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
     screened_at = models.DateTimeField(null=True, blank=True)
 
-    # -- AI Layer / vector sync tracking ------------------------------------
-    vector_sync_status = models.CharField(
-        max_length=15, choices=VectorSyncStatusChoices.choices, default=VectorSyncStatusChoices.NOT_SYNCED
-    )
+    vector_sync_status = models.CharField(max_length=15, choices=VectorSyncStatusChoices.choices, default=VectorSyncStatusChoices.NOT_SYNCED)
+    
     vector_synced_at = models.DateTimeField(null=True, blank=True)
     vector_sync_error = models.TextField(blank=True, default="")
 
@@ -180,14 +153,15 @@ class AdvisoryResource(models.Model):
             models.Index(fields=["sector", "value_chain"]),
             models.Index(fields=["quality_flag"]),
             models.Index(fields=["risk_level"]),
+            models.Index(fields=["resource_id"]),
         ]
 
     def __str__(self):
-        return f"{self.publication_id} — {self.title}"
+        return f"{self.resource_id} — {self.title}"
 
     @property
     def is_ready_for_ai_layer(self) -> bool:
-        """Only certified, low-risk-or-reviewed content should feed the RAG index."""
+        
         return self.quality_flag == QualityFlagChoices.READY_TO_CERTIFY
 
 
@@ -196,9 +170,13 @@ class ContentSection(models.Model):
     One row = one section-level content chunk (JSON spec ``content[]``
     items). This is the granularity the AI Layer chunks and embeds into the
     vector database.
+
+    Maps to the "Potato", "Weather", "Hides and Skin", "Millet" and "Dairy"
+    sheets of the Screen & Classify workbook.
     """
 
     resource = models.ForeignKey(AdvisoryResource, related_name="content_sections", on_delete=models.CASCADE)
+    
     content_id = models.CharField(max_length=200, unique=True)
     reading_order = models.PositiveIntegerField()
     content_header = models.CharField(max_length=300, blank=True, default="")
@@ -206,9 +184,18 @@ class ContentSection(models.Model):
     page_start = models.PositiveIntegerField(null=True, blank=True)
     page_end = models.PositiveIntegerField(null=True, blank=True)
 
-    # Kept as JSON: each item is {"image_url", "image_text", "image_caption", "page_number"}
+    pages_reference = models.CharField(
+        max_length=100,
+        blank=True,
+        default="",
+        db_index=True,
+    )
+
+    value_chain = models.CharField(max_length=120, blank=True, default="", db_index=True)
+
+
     content_images = models.JSONField(default=list, blank=True)
-    # Kept as JSON: each item is {"table_id", "table_title", "page_number", "table_text", "table_json"}
+
     content_tables = models.JSONField(default=list, blank=True)
 
     content_warnings = models.JSONField(default=list, blank=True)
@@ -216,6 +203,10 @@ class ContentSection(models.Model):
 
     class Meta:
         ordering = ["resource", "reading_order"]
+        indexes = [
+            models.Index(fields=["resource", "reading_order"]),
+            models.Index(fields=["value_chain"]),
+        ]
 
     def __str__(self):
         return f"{self.content_id} ({self.content_header})"
@@ -223,3 +214,28 @@ class ContentSection(models.Model):
     @property
     def has_warnings(self) -> bool:
         return bool(self.content_warnings)
+
+class WorkbookUpload(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending"
+        PROCESSING = "processing"
+        PROCESSED = "processed"
+        FAILED = "failed"
+
+    file = models.FileField(upload_to="workbook/")
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.PENDING, db_index=True)
+
+    resources_created = models.PositiveIntegerField(default=0)
+    resources_updated = models.PositiveIntegerField(default=0)
+    sections_created = models.PositiveIntegerField(default=0)
+    sections_updated = models.PositiveIntegerField(default=0)
+    sections_skipped = models.PositiveIntegerField(default=0)
+
+    log = models.TextField(blank=True, default="")
+
+    class Meta:
+        ordering = ["-uploaded_at"]
+
+        def __str__(self):
+            return f"WorkbookUpload {self.id} ({self.status}) - {self.file.name}"
