@@ -74,6 +74,26 @@ that guards this.
 | `GET /beckn/network/providers/` | Every active provider network-wide, with which certified categories each has |
 | `GET /beckn/network/{provider_id}/catalog/?category=` | Merged, certified catalog for one provider — combines `AdvisoryResource` (for KALRO) with `CatalogItem` |
 
+### Uploaded training documents
+
+Staff can upload PDF, DOCX, XLSX, JSON, TXT, and Markdown files through
+`POST /api/v1/documents/` using a multipart form with a `file` field and an
+optional `name`. Uploads are limited to 25 MB. The original is retained under
+Django's media storage; the AI Layer extracts its text, chunks and embeds it,
+then stores those vectors in the separate `kalro_training_documents_v2` Chroma
+collection in `kalro_knowledge_brain/chroma_data/chroma.sqlite3`.
+
+The document status moves from `pending` to `processing` and then `verified`;
+parsing or indexing errors are returned by the API and saved on the document
+as `failed` with a `processing_error`. Failed documents can be retried with
+`POST /api/v1/documents/{id}/process/`. Document management endpoints are
+staff-only. This collection is intentionally separate from the advisory
+collection queried by farmer chat, so uploaded training documents do not
+become farmer-retrievable.
+
+PDFs must contain extractable text. Image-only/scanned PDFs currently fail
+processing because OCR is not enabled.
+
 The existing `/beckn/provider-profile/`, `/beckn/catalog/`, and
 `/beckn/catalog/{publication_id}/` endpoints are untouched and keep working
 exactly as before — they're KALRO's own advisory-content catalog. The
@@ -364,6 +384,14 @@ wired into the vector index yet. See "Production hardening notes" below.
 ---
 
 ## RAG pipeline (`kalro_knowledge_brain/app/`)
+
+Chat combines Chroma matches with direct keyword matches from certified
+`ContentSection` and `AdvisoryResource` rows in Django. Chroma collections are
+versioned when the embedding dimension changes. To copy existing v2 advisory
+and `kalro_training_documents` chunks into the current collections, stop the AI
+Layer, run `python -m scripts.reembed_chroma_collections` from
+`kalro_knowledge_brain/` with its Python environment active, then restart the
+AI Layer. The script re-embeds into new collections and retains the old ones.
 
 1. **Chunking** (`ingestion.py`) — one chunk per `content[]` section
    (sections in KALRO exports are already coherent, paragraph-length units);

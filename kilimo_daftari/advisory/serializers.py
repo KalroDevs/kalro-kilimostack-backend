@@ -21,11 +21,17 @@ class ContentSectionSerializer(serializers.ModelSerializer):
             "content_text",
             "page_start",
             "page_end",
+            "pages_reference",
+            "value_chain",
             "content_images",
             "content_tables",
             "content_warnings",
             "content_tags",
         ]
+        extra_kwargs = {
+            "pages_reference": {"required": False, "allow_blank": True},
+            "value_chain":     {"required": False, "allow_blank": True},
+        }
 
 
 class AdvisorySafetySerializer(serializers.Serializer):
@@ -51,16 +57,16 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
     included as additional top-level fields (``currency_status``,
     ``scientific_accuracy_check``, ``quality_flag``, ``screening_notes``)
     that sit alongside -- not inside -- the spec's own fields.
-
-    Real-world source exports are looser than the spec table suggests
-    (e.g. ``content_type: "PDF brochure"`` rather than an enum value, and
-    empty strings instead of nulls for optional dates) -- so date fields and
-    ``content_type`` are validated leniently here rather than as strict
-    Django model choices/DateFields.
     """
 
     content = ContentSectionSerializer(many=True, source="content_sections", required=False)
     advisory_safety = serializers.SerializerMethodField()
+
+    
+    resource_id = serializers.CharField(max_length=50)
+    publication_id = serializers.CharField(
+        max_length=1000, allow_blank=True, required=False, default=""
+    )
 
     # Free-form on ingestion (spec lists suggested values, not a closed enum);
     # the underlying model field still offers the suggested set as admin choices.
@@ -93,8 +99,9 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdvisoryResource
         fields = [
-            # Core resource fields (JSON spec)
             "id",
+            "resource_id",
+            # Core resource fields (JSON spec)
             "title",
             "link",
             "publication_id",
@@ -133,7 +140,16 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "vector_sync_status", "vector_synced_at", "created_at", "updated_at"]
+        read_only_fields = [
+            "id",
+            "vector_sync_status",
+            "vector_synced_at",
+            "created_at",
+            "updated_at",
+        ]
+        extra_kwargs = {
+            "publication_id": {"required": False, "allow_blank": True},
+        }
 
     def get_advisory_safety(self, obj):
         return {
@@ -158,10 +174,15 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
         validated_data = self._flatten_advisory_safety(validated_data, self.initial_data)
         resource = AdvisoryResource.objects.create(**validated_data)
         for section in sections_data:
+           
+            section.setdefault("value_chain", resource.value_chain)
             ContentSection.objects.create(resource=resource, **section)
         return resource
 
     def update(self, instance, validated_data):
+        
+        validated_data.pop("resource_id", None)
+
         sections_data = validated_data.pop("content_sections", None)
         validated_data = self._flatten_advisory_safety(validated_data, self.initial_data)
         for attr, value in validated_data.items():
@@ -173,6 +194,7 @@ class AdvisoryResourceSerializer(serializers.ModelSerializer):
             incoming_ids = {s["content_id"] for s in sections_data}
             instance.content_sections.filter(content_id__in=existing_ids - incoming_ids).delete()
             for section in sections_data:
+                section.setdefault("value_chain", instance.value_chain)
                 ContentSection.objects.update_or_create(
                     content_id=section["content_id"],
                     defaults={**section, "resource": instance},
@@ -196,4 +218,5 @@ class ScreeningUpdateSerializer(serializers.ModelSerializer):
             "risk_level",
             "quality_flag",
             "screening_notes",
+            "review_date",
         ]
