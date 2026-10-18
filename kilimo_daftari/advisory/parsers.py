@@ -21,8 +21,10 @@ from .models import (
 
 MULTI_SPLIT = re.compile(r"\s*;\s*|\s*\n\s*")
 
-# Helpers
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
 def clean(v):
     return "" if v is None else str(v).strip()
 
@@ -87,8 +89,10 @@ SECTOR_FROM_GROUP = {
     "livestock": SectorChoices.LIVESTOCK,
 }
 
-# Header discovery
 
+# ---------------------------------------------------------------------------
+# Header discovery
+# ---------------------------------------------------------------------------
 def _header_row_inventory(ws):
     for r in range(1, 15):
         if clean(ws.cell(row=r, column=2).value) == "ID":
@@ -103,8 +107,10 @@ def _header_row_section(ws):
                 return r
     return None
 
-# Parsers
 
+# ---------------------------------------------------------------------------
+# Parsers
+# ---------------------------------------------------------------------------
 def parse_inventory_sheet(ws, group):
     hrow = _header_row_inventory(ws)
     if hrow is None:
@@ -152,7 +158,6 @@ def parse_inventory_sheet(ws, group):
             "quality_flag":      enum_value(ws.cell(row=r, column=19).value, QualityFlagChoices),
             "screening_notes":   clean(ws.cell(row=r, column=20).value),
         }
-        
         if sector_value:
             row["sector"] = sector_value
         out.append(row)

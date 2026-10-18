@@ -1,7 +1,7 @@
 """
 Thin async client for a self-hosted Ollama server, used for both:
 
-  * embeddings (POST /api/embeddings) -- to build & query the vector index
+  * embeddings (POST /api/embed) -- to build & query the vector index
   * chat generation (POST /api/chat) -- to produce grounded RAG answers
 
 No external Ollama SDK dependency is required; this talks to Ollama's REST
@@ -31,22 +31,26 @@ class OllamaClient:
         )
 
     async def embed(self, text: str, model: str | None = None) -> list[float]:
-        model = model or settings.ollama_embed_model
-        try:
-            resp = await self._client.post("/api/embeddings", json={"model": model, "prompt": text})
-            resp.raise_for_status()
-            data = resp.json()
-            embedding = data.get("embedding")
-            if not embedding:
-                raise OllamaError(f"Ollama returned no embedding for model={model!r}")
-            return embedding
-        except httpx.HTTPError as exc:
-            raise OllamaError(f"Ollama embeddings call failed: {exc}") from exc
+        embeddings = await self.embed_many([text], model=model)
+        if not embeddings:
+            raise OllamaError(f"Ollama returned no embedding for model={model!r}")
+        return embeddings[0]
 
     async def embed_many(self, texts: list[str], model: str | None = None) -> list[list[float]]:
-        # Ollama's /api/embeddings endpoint is single-prompt; batch sequentially.
-        # (Swap for a batched embeddings endpoint if your Ollama build supports it.)
-        return [await self.embed(t, model=model) for t in texts]
+        model = model or settings.ollama_embed_model
+        if not texts:
+            return []
+        try:
+            # Uses the modern /api/embed endpoint supporting batch input lists
+            resp = await self._client.post("/api/embed", json={"model": model, "input": texts})
+            resp.raise_for_status()
+            data = resp.json()
+            embeddings = data.get("embeddings")
+            if not embeddings:
+                raise OllamaError(f"Ollama returned no embeddings for model={model!r}")
+            return embeddings
+        except httpx.HTTPError as exc:
+            raise OllamaError(f"Ollama embeddings call failed: {exc}") from exc
 
     async def chat(
         self,

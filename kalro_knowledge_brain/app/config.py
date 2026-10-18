@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_chat_model: str = "llama3.1"
     ollama_embed_model: str = "nomic-embed-text"
+    #ollama_embed_model: str = "qwen3-embedding:0.6b"
     ollama_request_timeout_seconds: float = 120.0
 
     # Vector store (Chroma, persisted to disk)

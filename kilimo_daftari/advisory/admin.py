@@ -28,6 +28,7 @@ from django.db.models import Count
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.html import format_html
+from .services import sync_many
 
 from import_export.admin import ExportActionModelAdmin, ImportExportModelAdmin
 
@@ -54,7 +55,6 @@ from .resources import (
     ValueChainResource,
 )
 
-from .services import sync_many
 # ===========================================================================
 # Display helpers
 # ===========================================================================

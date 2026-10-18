@@ -1,6 +1,7 @@
 """Import advisory inventory and value chain sections from uploaded XLSX files."""
 from __future__ import annotations
 
+from collections import Counter
 import re
 from datetime import date, datetime
 
@@ -47,7 +48,21 @@ def _date(value):
 
 def _sheet_rows(ws):
     """Find a recognizable header row within the first 25 rows."""
-    for row_no, cells in enumerate(ws.iter_rows(min_row=1, max_row=min(ws.max_row, 25), values_only=True), 1):
+    if ws.max_row is None or ws.max_column is None:
+        # Read-only worksheets can omit their dimensions in the XLSX file.
+        ws.calculate_dimension(force=True)
+    max_row = ws.max_row or 0
+    max_column = ws.max_column or 0
+    if max_row < 1 or max_column < 1:
+        return None, None, []
+
+    rows = ws.iter_rows(
+        min_row=1,
+        max_row=min(max_row, 25),
+        max_col=max_column,
+        values_only=True,
+    )
+    for row_no, cells in enumerate(rows, 1):
         headers = [_header(v) for v in cells]
         present = {h for h in headers if h}
         if {"id", "content title"} <= present:
@@ -216,8 +231,12 @@ def _ingest_workbook(upload: WorkbookUpload):
         if not inventories:
             raise ValueError("No advisory resource worksheet found. Add a sheet with ID and Content Title headers.")
         ids = [row["workbook_resource_id"] for row in inventories]
-        if len(ids) != len(set(ids)):
-            raise ValueError("The workbook contains duplicate advisory IDs; each ID must be unique.")
+        duplicates = sorted(resource_id for resource_id, count in Counter(ids).items() if count > 1)
+        if duplicates:
+            raise ValueError(
+                "The workbook contains duplicate advisory IDs: "
+                f"{', '.join(duplicates)}. Each ID must be unique."
+            )
         # Upsert resources first so section Pages references resolve independent of sheet order.
         resources_by_id = {}
         for item in inventories:
